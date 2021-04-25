@@ -56,7 +56,7 @@ testMerge <- merge(testMerge, TypeGroupForRemainingNAyears, by="Type")
 testMerge$YearBuilt <- ifelse(is.na(testMerge$YearBuilt), testMerge$medianYearType, testMerge$YearBuilt)
 
 # drop the median columns. Address, seller, and method of sale don't have much to do with the value of a house
-testMerge <- subset(testMerge, select = -c(SellerG, Method, medianArea, medianYear, medianCar, medianYearType))
+testMerge <- subset(testMerge, select = -c(SellerG, Method, medianArea, medianYear, medianCar, medianYearType, Bedroom2))
 
 # view if any null columns
 colSums(is.na(testMerge))

@@ -1,0 +1,270 @@
+---
+title: "Melbourne Analysis"
+date: "4/24/2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse) 
+library(broom) # augment and tidy
+library(knitr) # kable
+library(lubridate) # Datetime
+library(plotly)
+library(heatmaply)
+library(ggcorrplot)
+```
+```{r}
+melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
+
+# ==============================================================================
+# The dataset contains multiple categorical variables, so create a list of them
+# and tell R to turn them into a factor
+# ==============================================================================
+
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb')
+melbourne[,cats] <- lapply(melbourne[,cats], factor)
+
+# ===============================================================================
+# There are multiple date formats in the date column {17/09/2016, 4/03/2017, etc.}
+# We can standardize the date formatting with the lubridate package 
+# ===============================================================================
+
+mdy <- mdy(melbourne$Date)
+dmy <- dmy(melbourne$Date)
+mdy[is.na(mdy)] <- dmy[is.na(mdy)]
+melbourne$Date <- mdy
+```
+
+### Visualizing the Numeric Correlations, Point Size Changes According to Correlation Test p-values
+```{r}
+numericVals <- subset(melbourne, select=-c(Suburb, Address, Date, Postcode, CouncilArea, Lattitude, Longtitude, Regionname, Type))
+
+# Compute correlation coefficients
+cor.coef <- cor(numericVals)
+
+# Compute correlation p-values
+cor.test.p <- function(x){
+    FUN <- function(x, y) cor.test(x, y)[["p.value"]]
+    z <- outer(
+      colnames(x), 
+      colnames(x), 
+      Vectorize(function(i,j) FUN(x[,i], x[,j]))
+    )
+    dimnames(z) <- list(colnames(x), colnames(x))
+    z
+}
+
+p <- cor.test.p(numericVals)
+
+heatmaply_cor(
+  cor.coef,
+  node_type = "scatter",
+  point_size_mat = -log(p), 
+  point_size_name = "-log10(p-value)",
+  label_names = c("x", "y", "Correlation")
+)
+```
+* Bedroom2 is just the number of bedrooms scraped from another source so we need to drop that due to multicollinearity
+
+### Melbourne Price Density Map
+```{r}
+fig <- melbourne 
+fig <- fig %>%
+  plot_ly(
+    type = 'densitymapbox',
+    lat = ~Lattitude,
+    lon = ~Longtitude,
+    coloraxis = 'Price',
+    radius = 10,
+    opacity = 0.5,
+    zoom = 13
+    ) 
+fig <- fig %>%
+  layout(
+    mapbox = list(
+      style="stamen-terrain",
+      zoom = 10,
+      center= list(lat=-37.8, lon=145)),
+      coloraxis = list(colorscale = "Viridis"))
+
+fig
+```
+* Melbourne housing prices are high in most areas. We may not need to worry about all the suburbs.
+
+### All Price Distributions
+```{r}
+pl <- plot_ly(y=~melbourne$Price,
+              type="box")
+pl
+```
+
+
+### Region Names
+```{r}
+p <- plot_ly(melbourne, x = ~Regionname, y = ~Price, color = ~Regionname, type = "box")
+p <- p %>% layout(boxmode = "group")
+p
+```
+```{r}
+region_classes <- melbourne %>% group_by(Regionname) %>% summarize(mean_price = round(mean(Price),2))
+ggplot(region_classes, aes(x=Regionname, y=mean_price, fill=Regionname)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = mean_price), hjust = .5,
+            color = "white",
+            size = 3) + 
+  theme_classic()
+```
+* Regions don't seem different enough in their mean prices to help a model estimate house price accurately
+
+### Building Type
+```{r}
+t <- plot_ly(melbourne, x = ~Type, y = ~Price, color = ~Type, type = "box")
+t <- t %>% layout(boxmode = "group")
+t
+```
+
+
+### Landsize Distribution
+```{r}
+fig <- plot_ly(y = melbourne$Landsize, type = "box")
+fig
+```
+* Definitely an outlier there
+
+### Distance and Price
+```{r}
+fig <- plot_ly(x = ~melbourne$Distance, y = ~melbourne$Price, type = 'box')
+fig
+```
+
+### Creating Models
+```{r}
+pricingModel <- lm(Price~Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+Regionname+Propertycount, data=melbourne)
+summary(pricingModel)
+```
+
+### Checking For Multicollinearity in the Baseline Model
+```{r}
+library(faraway)
+vif(pricingModel)
+```
+* No multicollinearity issues in the baseline model
+
+## Dealing With Outliers
+```{r}
+cooksd <- cooks.distance(pricingModel)
+plot(cooksd, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+```
+* Observation 5523: 71 Hamilton Rd, New Gisborne VIC 3438, Australia
+* This observation is a ranch about 50 miles outside of Melbourne. Building area = 44515.00, land size = 44500. Both variables far greater than the average. 
+* We should delete this from the dataset since we're concerned with predicting houses actually in Melbourne.  
+
+* Observation 1816: 389 Gore St Fitzroy VIC 3065, Australia
+* The data says the land size is 433014, looking the address up on google maps confirms that this is undoubtedly a data entry error. This property is a row house in close proximity to downtown Melbourne.
+* Land size is actuall 107, https://www.onthehouse.com.au/property/vic/fitzroy-3065/389-gore-st-fitzroy-vic-3065-7029467
+
+* Observation 5376: 5 Armstrong St, Middle Park VIC 3206, Australia
+* Data entry error where the year says it was built in 1196
+* Year built is 1960, https://www.propertyvalue.com.au/property/5-armstrong-street-mount-waverley-vic-3149/12065558
+
+```{r}
+# deleting the ranch thats 50 miles away
+melbourne <- melbourne[-c(5523),]
+
+# correcting the land size data entry mistake
+melbourne$Landsize[1816] <- 107
+
+# correcting the year built data entry mistake
+melbourne$YearBuilt[5376] <- 1960
+```
+
+## Fitting an Outlier Corrected Model
+```{r}
+pricingModelOutlierCorrected <- lm(Price~Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+Regionname+Propertycount, data=melbourne)
+summary(pricingModelOutlierCorrected)
+```
+
+## Checking for Influential Observations Again
+```{r}
+cooksd2 <- cooks.distance(pricingModelOutlierCorrected)
+plot(cooksd2, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd2, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd2)+1, y=cooksd2, labels=ifelse(cooksd2>4*mean(cooksd2, na.rm=T),names(cooksd2),""), col="red")  # add labels
+```
+* Observation 2652: 19 Warringal Street Bulleen Vic 3105
+* Says building area is 6791, building area actually 731, https://www.realestate.com.au/property/19-warringal-st-bulleen-vic-3105
+
+```{r}
+melbourne$BuildingArea[2652] <- 731
+pricingModelOutlierCorrected <- lm(Price~Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+Regionname+Propertycount, data=melbourne)
+summary(pricingModelOutlierCorrected)
+cooksd2 <- cooks.distance(pricingModelOutlierCorrected)
+plot(cooksd2, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd2, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd2)+1, y=cooksd2, labels=ifelse(cooksd2>4*mean(cooksd2, na.rm=T),names(cooksd2),""), col="red")  # add labels
+```
+* Observation 9480: 186 Queens Parade Fitzroy North Vic 3068
+* Data says land size is 2778, it's actually 235, https://www.realestate.com.au/property/186-queens-pde-fitzroy-north-vic-3068
+* Says building area is 3558 but that's extremely unlikely (would be a $38000ft^2$ townhome in imperial units). I'll change it to match land size.  
+
+* Observation 2847: 46 Athelstan Road, Camberwell, Vic 3124
+* Data says building size is 3112, which is accurate according to the website, https://www.realestate.com.au/property/46-athelstan-rd-camberwell-vic-3124.
+* But the floor plan is available on the website, and those numbers don't match up. You can tell the building isn't 3112$m^2$. Adding the square footage results in 201.9. The deck space measurements aren't in the floor plan, so perhaps that would add up to 311.2, and it was an error on the websites' end.  
+
+```{r}
+# have to use index 9479 since there was an instance deleted before this index
+melbourne$BuildingArea[2847] <- 311
+melbourne$BuildingArea[9479] <- 731
+melbourne$Landsize[9479] <- 731
+pricingModelOutlierCorrected <- lm(Price~Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+Regionname+Propertycount, data=melbourne)
+summary(pricingModelOutlierCorrected)
+cooksd2 <- cooks.distance(pricingModelOutlierCorrected)
+plot(cooksd2, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd2, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd2)+1, y=cooksd2, labels=ifelse(cooksd2>4*mean(cooksd2, na.rm=T),names(cooksd2),""), col="red")  # add labels
+```
+* The rest of these influential observations likely have to do with all the points with land size of 0. 
+* Observation 11679 building size is wrong, it's actually 92.9. Land size of 0 is almost exclusively of housing type U, which is an apartment unit/duplex, so 0 makes sense in that situation.  
+
+* The data is likely being scraped from that site, and I feel like I've proven that site gives inaccurate information every so often. If you look up instance 11679, 5/16 St Georges Rd, the following site will tell you it's 1560$m^2$ https://www.realestate.com.au/property/unit-5-16-st-georges-rd-elsternwick-vic-3185 , but this site will tell you its 92.9$m^2$ https://www.homely.com.au/homes/5-16-st-georges-road-elsternwick-vic-3185/2219115. It's obvious by just looking at the house that the correct measurement is 92.9. I'm not going to continue checking these individually, if a building size is over 1000$m^2$ (10763$ft^2$), I'm dividing it by 100 because it is likely inaccurate.   
+
+```{r}
+melbourne$BuildingArea[11678] <- 92.9
+melbourne$BuildingArea <- ifelse(melbourne$BuildingArea>1000, melbourne$BuildingArea/100, melbourne$BuildingArea)
+pricingModelOutlierCorrected <- lm(Price~Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+Regionname+Propertycount, data=melbourne)
+summary(pricingModelOutlierCorrected)
+cooksd2 <- cooks.distance(pricingModelOutlierCorrected)
+plot(cooksd2, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd2, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd2)+1, y=cooksd2, labels=ifelse(cooksd2>4*mean(cooksd2, na.rm=T),names(cooksd2),""), col="red")  # add labels
+```
+```{r}
+fig <- plot_ly(y = melbourne$Landsize, type = "box")
+fig
+```
+
+
+```{r}
+fig <- plot_ly(y = melbourne$BuildingArea, type = "box")
+fig
+```
+
+* Still plenty of outliers in building and land size. Land size likely has inaccurate instances as well.  
+
+
+
+
+
+
+
+
+
+
+
