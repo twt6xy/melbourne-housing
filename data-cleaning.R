@@ -1,7 +1,10 @@
 library(tidyverse)
+library(data.table)
+library(dplyr)
+library(lubridate) # Datetime
 
-# read in the raw data
-melbourne <- read.csv("melb_data_raw.csv", header=TRUE)
+###you need to read in your NA's, leaving stringasfactors as false, but true would save you some work later
+melbourne <- read.csv("melb_data_raw.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA","NULL"), header=TRUE)
 
 # view if any null columns
 colSums(is.na(melbourne))
@@ -55,11 +58,89 @@ testMerge$Car <- ifelse(is.na(testMerge$Car), testMerge$medianCar, testMerge$Car
 testMerge <- merge(testMerge, TypeGroupForRemainingNAyears, by="Type")
 testMerge$YearBuilt <- ifelse(is.na(testMerge$YearBuilt), testMerge$medianYearType, testMerge$YearBuilt)
 
+councilSuburbs <- testMerge[!duplicated(testMerge[,c("Suburb", "CouncilArea")]),]
+councilSuburbs <- subset(councilSuburbs, select = c( Suburb, CouncilArea))
+councilSuburbs <- na.omit(councilSuburbs)
+councilSuburbs <- councilSuburbs[!duplicated(councilSuburbs[,c("Suburb", "CouncilArea")]),]
+councilSuburbs <- councilSuburbs[!duplicated(councilSuburbs$Suburb), ]
+testMerge <- merge(testMerge, councilSuburbs, by="Suburb")
+testMerge$CouncilArea <- ifelse(is.na(testMerge$CouncilArea.x), testMerge$CouncilArea.y, testMerge$CouncilArea.x)
+
 # drop the median columns. Address, seller, and method of sale don't have much to do with the value of a house
-testMerge <- subset(testMerge, select = -c(SellerG, Method, medianArea, medianYear, medianCar, medianYearType, Bedroom2))
+testMerge <- subset(testMerge, select = -c(Address, medianArea, medianYear, medianCar, medianYearType, Bedroom2, CouncilArea.x, CouncilArea.y))
+testMerge <- distinct(testMerge)
+melbourne <- testMerge
+
+factor.list.sub <- c("CouncilArea","Postcode","Regionname","SellerG","Suburb")
+for (f in factor.list.sub) {
+        x <- paste("agg_",f, sep="")
+        eval(call("<-", as.name(x), aggregate(melbourne[,names(melbourne)%in% f], by = list(melbourne[,names(melbourne)%in% f]), NROW)))
+        
+}
+
+##anything less than 100 frequency in councilarea, change to other
+consolidate <- 100
+for (i in 1:NROW(agg_CouncilArea)){
+        if (agg_CouncilArea[i,2] <= consolidate){
+                melbourne$CouncilArea <- as.character(melbourne$CouncilArea)
+                melbourne$CouncilArea[melbourne$CouncilArea == agg_CouncilArea[i,1] & !is.na(melbourne$CouncilArea)] <- "Other"
+                melbourne$CouncilArea <- as.factor(melbourne$CouncilArea)
+        }
+        
+        
+}
+##anything less than 25 frequency in post code, change to other
+consolidate <- 25
+for (i in 1:NROW(agg_Postcode)){
+        if (agg_Postcode[i,2] <= consolidate){
+                melbourne$Postcode <- as.character(melbourne$Postcode)
+                melbourne$Postcode[melbourne$Postcode == agg_Postcode[i,1] & !is.na(melbourne$Postcode)] <- "Other"
+                melbourne$Postcode <- as.factor(melbourne$Postcode)
+        }
+        
+        
+}
+##anything less than 20 frequency in seller, change to other
+consolidate <- 20
+for (i in 1:NROW(agg_SellerG)){
+        if (agg_SellerG[i,2] <= consolidate){
+                melbourne$SellerG <- as.character(melbourne$SellerG)
+                melbourne$SellerG[melbourne$SellerG == agg_SellerG[i,1] & !is.na(melbourne$SellerG)] <- "Other"
+                melbourne$SellerG <- as.factor(melbourne$SellerG)
+        }
+        
+        
+}
+##anything less than 20 frequency in suburb, change to other
+consolidate <- 20
+for (i in 1:NROW(agg_Suburb)){
+        if (agg_Suburb[i,2] <= consolidate){
+                melbourne$Suburb <- as.character(melbourne$Suburb)
+                melbourne$Suburb[melbourne$Suburb == agg_Suburb[i,1] & !is.na(melbourne$Suburb)] <- "Other"
+                melbourne$Suburb <- as.factor(melbourne$Suburb)
+        }
+
+}
+
 
 # view if any null columns
-colSums(is.na(testMerge))
+colSums(is.na(melbourne))
+
+melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
+
+# ===============================================================================
+# There are multiple date formats in the date column {17/09/2016, 4/03/2017, etc.}
+# We can standardize the date formatting with the lubridate package 
+# ===============================================================================
+mdy <- mdy(melbourne$Date)
+dmy <- dmy(melbourne$Date)
+mdy[is.na(mdy)] <- dmy[is.na(mdy)]
+melbourne$Date <- mdy
+melbourne$Month <- month(melbourne$Date)
+melbourne$Year <- year(melbourne$Date)
+
+# arrange by date for time series analysis purposes
+melbourne <- arrange(melbourne, Date)
 
 # export to a cleaned csv file
-write.csv(testMerge, file="./melbourne_cleaned.csv")
+write.csv(melbourne, file="./melbourne_cleaned.csv")
