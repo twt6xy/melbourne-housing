@@ -52,7 +52,7 @@ library(multcomp)
 setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
 melb.df <- read.csv("melbourne_cleaned.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA"))
 melb.df <- data.frame(melb.df[,-1], row.names=melb.df[,1])
-melb.df$Date <- as.Date(melb.df$Date,"%d/%m/%Y")
+melb.df$Date <- as.Date(melb.df$Date,"%Y-%m-%d")
 melb.df$Date2 <- format(melb.df$Date, "%Y-%m")
 
 # mapbox token
@@ -124,9 +124,11 @@ ui <- shinyUI(dashboardPage(
                     tabBox(title = "Predictor Transformation",tabPanel("Why We Would Do It",br(),shiny::p("If our assumption of  linearity is not met after a Box Cox Transformation, a predictor transformation may be in order.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:pink;border-left:8px solid red;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
                            tabPanel("Chosen Transformation",numericInput("obs3", "Which Transformation Would You Like:", 0, min = -3, max = 3))),
                     tabBox(title = "Re-Check Assumptions",tabPanel("What To Look For",br(),shiny::p("Did our transformation of the response resolve our outstanding assumption issues? If not, we should consider transforming our predictor as well.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:pink;border-left:8px solid red;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
-                           tabPanel("Linearity",plotOutput("ttsmplot")),tabPanel("Constant Variance",plotOutput("ttsmplot1")), tabPanel("Independence",plotOutput("ttsmplot2")),tabPanel("Normality",plotOutput("ttsmplot3"))),
-                    tabBox(title = "Final Model With Categorical Variables",tabPanel("Explanation",br(),shiny::p("You have made your transformations of the response and predictor (if necessary), so now choose which categorical predictors you wish to add for your final model.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:lightgreen;border-left:8px solid green;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
-                           tabPanel("Model Output",verbatimTextOutput("fmodel")))
+                           tabPanel("Linearity",plotOutput("ttsmplot")),tabPanel("Constant Variance",plotOutput("ttsmplot1")), tabPanel("Independence",plotOutput("ttsmplot2")),tabPanel("Independence 2",plotOutput("ttsmplot2a")),tabPanel("Normality",plotOutput("ttsmplot3"))),
+                    tabBox(title = "Final Model With Categorical Variables",tabPanel("Explanation",br(),shiny::p("You have made your transformations of the response and predictor (if necessary), so now choose which categorical predictors you wish to add for your final model. We have also adjusted the response variable by month and year to deal with time series implications.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:lightgreen;border-left:8px solid green;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
+                           tabPanel("Model Output",verbatimTextOutput("fmodel"))),
+                    tabBox(title = "Validate Assumptions",tabPanel("What To Look For",br(),shiny::p("Our final model should meet our three assumptions: 1) the residuals have constant variance, 2) the residuals are independent, and 4) the residuals are normally distributed.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:lightgreen;border-left:8px solid green;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
+                           tabPanel("Constant Variance",plotOutput("tsmplot1.sa")), tabPanel("Independence",plotOutput("tsmplot2.sa")),tabPanel("Normality",plotOutput("tsmplot3.sa")))
                     ),
             tabItem("mod",)
             
@@ -144,7 +146,7 @@ server <- shinyServer(function(input, output,session)
   shinyjs::show("app-content")
   
   output$categ <- renderUI({
-    categ <- sort(c("Type","Postcode","Suburb","CouncilArea","Regionname"), decreasing = FALSE)
+    categ <- sort(c("Type","Postcode","Suburb","CouncilArea","Regionname","SellerG"), decreasing = FALSE)
     selectInput("categchoose", "Select Categorical Variable:", categ, selected = categ[1], multiple = FALSE)
   })
   
@@ -156,22 +158,37 @@ server <- shinyServer(function(input, output,session)
   
   output$quant <- renderUI({
     quant <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"),decreasing = FALSE)
-    selectInput("quantchoose", "Select Quantitative Variable:", quant, selected = quant[1], multiple = FALSE)
+    selectInput("quantchoose", "Select Quantitative Variable:", quant, selected = "Price", multiple = FALSE)
   })
   
   output$categ2 <- renderUI({
-    categ2 <- sort(c("Type","Postcode","Suburb","CouncilArea","Regionname","Year","Month"), decreasing = FALSE)
+    categ2 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname"), decreasing = FALSE)
     selectInput("categchoose2", "Select Categorical Predictor Variable(s) To Add:", categ2, selected = categ2[1], multiple = TRUE)
   })
   
   output$quant3 <- renderUI({
-    quant3 <- sort(c("Price","Year","Month","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Year","Month"), decreasing = FALSE)
-    selectInput("quantchoose3", "Select Predictor Variable:", quant3, selected = quant3[1], multiple = FALSE)
+    quant3 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"), decreasing = FALSE)
+    selectInput("quantchoose3", "Select Predictor Variable:", quant3, selected = "Rooms", multiple = FALSE)
   })
   
   output$quant2 <- renderUI({
     quant2 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"),decreasing = FALSE)
     selectInput("quantchoose2", "Select Response Variable:", quant2, selected = "Price", multiple = FALSE)
+  })
+  
+  output$categ3 <- renderUI({
+    categ3 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname"), decreasing = FALSE)
+    selectInput("categchoose3", "Select Categorical Predictor Variable(s) To Add:", categ3, selected = categ3[1], multiple = TRUE)
+  })
+  
+  output$quant5 <- renderUI({
+    quant5 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"), decreasing = FALSE)
+    selectInput("quantchoose5", "Select Predictor Variable(s):", quant5, selected = list("Rooms","YearBuilt"), multiple = TRUE)
+  })
+  
+  output$quant4 <- renderUI({
+    quant4 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"),decreasing = FALSE)
+    selectInput("quantchoose4", "Select Response Variable:", quant4, selected = "Price", multiple = FALSE)
   })
   
   output$menu <- renderMenu({
@@ -189,7 +206,10 @@ server <- shinyServer(function(input, output,session)
                menuSubItem(uiOutput("quant2"), tabName = "stat"),
                menuSubItem(uiOutput("quant3")),
                menuSubItem(uiOutput("categ2"))),
-      menuItem("Multivariate Linear Regression", tabName = "mod", icon = icon("laptop-code"))
+      menuItem("Multivariate Linear Regression", tabName = "mod", icon = icon("laptop-code"),
+               menuSubItem(uiOutput("quant4"), tabName = "stat"),
+               menuSubItem(uiOutput("quant5")),
+               menuSubItem(uiOutput("categ3")))
       
     )
   })
@@ -199,13 +219,18 @@ server <- shinyServer(function(input, output,session)
     req(input$categlchoose)
     req(input$categchoose)
     req(input$quantchoose)
+    req(input$dateRange)
 
     if("All" %in% input$categlchoose) {
       melb.df %>%
-        filter_(quote(get(input$categchoose) != "@?><"))
+        filter_(quote(get(input$categchoose) != "@?><")) %>%
+        filter_(quote(Date >= input$dateRange[1])) %>%
+        filter_(quote(Date <= input$dateRange[2]))
     } else {
       melb.df %>%
-        filter_(quote(get(input$categchoose) %in% input$categlchoose))
+        filter_(quote(get(input$categchoose) %in% input$categlchoose)) %>%
+        filter_(quote(Date >= input$dateRange[1])) %>%
+        filter_(quote(Date <= input$dateRange[2]))
     }
 
   })
@@ -214,8 +239,17 @@ server <- shinyServer(function(input, output,session)
     req(input$quantchoose2)
     req(input$quantchoose3)
     req(input$categchoose2)
-    melb.df$Year <- year(melb.df$Date)
-    melb.df$Month <- month(melb.df$Date)
+    # melb.df$Year <- year(melb.df$Date)
+    # melb.df$Month <- month(melb.df$Date)
+    melb.df
+  })
+  
+  data3 <- reactive({
+    req(input$quantchoose4)
+    req(input$quantchoose5)
+    req(input$categchoose3)
+    # melb.df$Year <- year(melb.df$Date)
+    # melb.df$Month <- month(melb.df$Date)
     melb.df
   })
   
@@ -427,6 +461,22 @@ server <- shinyServer(function(input, output,session)
     acf(model$residuals, main="ACF of Residuals (Squared)")
   })
   
+  output$ttsmplot2a <- renderPlot({
+    data <- data2()
+    if(input$obs2 == 0){
+      data$Transformed.Response <- log(data[,names(data) %in% input$quantchoose2])
+    } else {
+      data$Transformed.Response <- (data[,names(data) %in% input$quantchoose2]) ^ input$obs2
+    }
+    if(input$obs3 == 0){
+      data$Transformed.Predictor <- log(data[,names(data) %in% input$quantchoose3])
+    } else {
+      data$Transformed.Predictor <- (data[,names(data) %in% input$quantchoose3]) ^ input$obs3
+    }
+    model <- lm(Transformed.Response~Transformed.Predictor, data = data)
+    pacf(model$residuals, main="PACF of Residuals (Squared)")
+  })
+  
   output$ttsmplot3 <- renderPlot({
     data <- data2()
     if(input$obs2 == 0){
@@ -446,36 +496,274 @@ server <- shinyServer(function(input, output,session)
   
   output$fmodel <- renderPrint({
     data = data2()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose2])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose2])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Month_Index
     for (f in input$categchoose2){
-      data[,names(data) %in% input$categchoose2] <- as.factor(data[,names(data) %in% input$categchoose2])
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
     }
-    if(len(input$categchoose2) == 1){
-      res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]), data = data)
+    data <- data[sample(NROW(data)),]
+    if(input$obs2 == 0){
+      data$Transformed.Response <- log(data[,names(data) %in% input$quantchoose2])
     } else {
-      if(len(input$categchoose2) == 2){
-        res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]) + get(input$categchoose2[2]), data = data)
+      data$Transformed.Response <- (data[,names(data) %in% input$quantchoose2]) ^ input$obs2
+    }
+    if(input$obs3 == 0){
+      data$Transformed.Predictor <- log(data[,names(data) %in% input$quantchoose3])
+    } else {
+      data$Transformed.Predictor <- (data[,names(data) %in% input$quantchoose3]) ^ input$obs3
+    }
+    if(length(input$categchoose2) == 1){
+      res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]), data = data)
+    } else {
+      if(length(input$categchoose2) == 2){
+        res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]), data = data)
       } else {
-        if(len(input$categchoose2) == 3){
-          res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]), data = data)
+        if(length(input$categchoose2) == 3){
+          res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]), data = data)
         } else {
-          if(len(input$categchoose2) == 4){
-            res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]), data = data)
+          if(length(input$categchoose2) == 4){
+            res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]), data = data)
           } else {
-            if(len(input$categchoose2) == 5){
-              res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]), data = data)
+            if(length(input$categchoose2) == 5){
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]), data = data)
             } else {
-              res<- lm(get(input$quantchoose2)~get(input$quantchoose3) + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]) + + get(input$categchoose2[6]), data = data)
-              
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]) + + get(input$categchoose2[6]), data = data)
+
             }
-                       
+
           }
         }
       }
     }
     summary(res)
+
+  })
+  
+  output$tsmplot1.sa <- renderPlot({
+    data = data2()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose2])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose2])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Month_Index
+    for (f in input$categchoose2){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    data <- data[sample(NROW(data)),]
+    if(input$obs2 == 0){
+      data$Transformed.Response <- log(data[,names(data) %in% input$quantchoose2])
+    } else {
+      data$Transformed.Response <- (data[,names(data) %in% input$quantchoose2]) ^ input$obs2
+    }
+    if(input$obs3 == 0){
+      data$Transformed.Predictor <- log(data[,names(data) %in% input$quantchoose3])
+    } else {
+      data$Transformed.Predictor <- (data[,names(data) %in% input$quantchoose3]) ^ input$obs3
+    }
+    if(length(input$categchoose2) == 1){
+      res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]), data = data)
+    } else {
+      if(length(input$categchoose2) == 2){
+        res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]), data = data)
+      } else {
+        if(length(input$categchoose2) == 3){
+          res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]), data = data)
+        } else {
+          if(length(input$categchoose2) == 4){
+            res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]), data = data)
+          } else {
+            if(length(input$categchoose2) == 5){
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]), data = data)
+            } else {
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]) + + get(input$categchoose2[6]), data = data)
+              
+            }
+            
+          }
+        }
+      }
+    }
+    
+    plot(res$fitted.values,res$residuals, main="Plot of Residuals against Fitted Values")
+    abline(h=0,col="red")
+  })
+  
+  output$tsmplot2.sa <- renderPlot({
+    data = data2()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose2])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose2])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Month_Index
+    for (f in input$categchoose2){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    data <- data[sample(NROW(data)),]
+    if(input$obs2 == 0){
+      data$Transformed.Response <- log(data[,names(data) %in% input$quantchoose2])
+    } else {
+      data$Transformed.Response <- (data[,names(data) %in% input$quantchoose2]) ^ input$obs2
+    }
+    if(input$obs3 == 0){
+      data$Transformed.Predictor <- log(data[,names(data) %in% input$quantchoose3])
+    } else {
+      data$Transformed.Predictor <- (data[,names(data) %in% input$quantchoose3]) ^ input$obs3
+    }
+    if(length(input$categchoose2) == 1){
+      res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]), data = data)
+    } else {
+      if(length(input$categchoose2) == 2){
+        res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]), data = data)
+      } else {
+        if(length(input$categchoose2) == 3){
+          res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]), data = data)
+        } else {
+          if(length(input$categchoose2) == 4){
+            res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]), data = data)
+          } else {
+            if(length(input$categchoose2) == 5){
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]), data = data)
+            } else {
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]) + + get(input$categchoose2[6]), data = data)
+              
+            }
+            
+          }
+        }
+      }
+    }
+    acf(res$residuals, main="ACF of Residuals (Squared)")
+  })
+  
+  output$tsmplot3.sa <- renderPlot({
+    data = data2()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose2])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose2], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose2])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose2] <- data[,names(data) %in% input$quantchoose2] * data$Month_Index
+    for (f in input$categchoose2){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    data <- data[sample(NROW(data)),]
+    if(input$obs2 == 0){
+      data$Transformed.Response <- log(data[,names(data) %in% input$quantchoose2])
+    } else {
+      data$Transformed.Response <- (data[,names(data) %in% input$quantchoose2]) ^ input$obs2
+    }
+    if(input$obs3 == 0){
+      data$Transformed.Predictor <- log(data[,names(data) %in% input$quantchoose3])
+    } else {
+      data$Transformed.Predictor <- (data[,names(data) %in% input$quantchoose3]) ^ input$obs3
+    }
+    if(length(input$categchoose2) == 1){
+      res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]), data = data)
+    } else {
+      if(length(input$categchoose2) == 2){
+        res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]), data = data)
+      } else {
+        if(length(input$categchoose2) == 3){
+          res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]), data = data)
+        } else {
+          if(length(input$categchoose2) == 4){
+            res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]), data = data)
+          } else {
+            if(length(input$categchoose2) == 5){
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]), data = data)
+            } else {
+              res<- lm(Transformed.Response~Transformed.Predictor + get(input$categchoose2[1]) + get(input$categchoose2[2]) + get(input$categchoose2[3]) + get(input$categchoose2[4]) + get(input$categchoose2[5]) + + get(input$categchoose2[6]), data = data)
+              
+            }
+            
+          }
+        }
+      }
+    }
+    
+    qqnorm(res$residuals)
+    qqline(res$residuals, col="red")
   })
   
 })
 
 
 shinyApp(ui = ui, server = server)
+
+
+# obs2 <- 0
+# obs3 <- 0
+# quantchoose2 <- "Price"
+# quantchoose3 <- "Rooms"
+# categchoose2 <- list("Type")
+# data = melb.df
+# data.y <- aggregate(data[,names(data) %in% quantchoose2], by = list(data$Year), FUN = median)
+# names(data.y) <- c("Year","Median.y")
+# data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% quantchoose2])
+# data.m <- aggregate(data[,names(data) %in% quantchoose2], by = list(data$Month), FUN = median)
+# names(data.m) <- c("Month","Median.m")
+# data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% quantchoose2])
+# data <- merge(data,data.y, by = "Year", all.x = TRUE)
+# data[,names(data) %in% quantchoose2] <- data[,names(data) %in% quantchoose2] * data$Year_Index
+# data <- merge(data,data.m, by = "Month", all.x = TRUE)
+# data[,names(data) %in% quantchoose2] <- data[,names(data) %in% quantchoose2] * data$Month_Index
+# for (f in categchoose2){
+#   data[,names(data) %in% categchoose2] <- as.factor(data[,names(data) %in% categchoose2])
+# }
+# data <- data[sample(NROW(data)),]
+# if(obs2 == 0){
+#   data$Transformed.Response <- log(data[,names(data) %in% quantchoose2])
+# } else {
+#   data$Transformed.Response <- (data[,names(data) %in% quantchoose2]) ^ obs2
+# }
+# if(obs3 == 0){
+#   data$Transformed.Predictor <- log(data[,names(data) %in% quantchoose3])
+# } else {
+#   data$Transformed.Predictor <- (data[,names(data) %in% quantchoose3]) ^ obs3
+# }
+# if(length(categchoose2) == 1){
+#   res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]), data = data)
+# } else {
+#   if(length(categchoose2) == 2){
+#     res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]), data = data)
+#   } else {
+#     if(length(categchoose2) == 3){
+#       res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]), data = data)
+#     } else {
+#       if(length(categchoose2) == 4){
+#         res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]), data = data)
+#       } else {
+#         if(length(categchoose2) == 5){
+#           res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]) + get(categchoose2[5]), data = data)
+#         } else {
+#           res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]) + get(categchoose2[5]) + + get(categchoose2[6]), data = data)
+#           
+#         }
+#         
+#       }
+#     }
+#   }
+# }
+# summary(res)
