@@ -1,0 +1,151 @@
+---
+title: "model_building"
+author: "Christian Schroeder"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(heatmaply)
+library(faraway)
+library(MASS)
+library(tidyverse) 
+```
+
+Import the cleaned data
+
+```{r}
+melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
+
+# ==============================================================================
+# The dataset contains multiple categorical variables, so create a list of them
+# and tell R to turn them into a factor
+# ==============================================================================
+
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb')
+melbourne[,cats] <- lapply(melbourne[,cats], factor)
+attach(melbourne)
+names(melbourne)
+```
+
+# MLR
+
+### Data Preparation
+
+#### Location Predictor
+
+-   We only need one location-based categorical predictor
+
+    -   Suburb, Postcode, Regionname, or CouncilArea
+
+```{r}
+plot(Price~Regionname)
+plot(Price~Suburb)
+plot(Price~Postcode)
+plot(Price~CouncilArea)
+```
+
+-   Focusing on granularity, Postcode and Suburb are the most specific location variables, but they would likely add too much complexity to the model
+-   So we should choose between Regionname or CouncilArea
+
+```{r}
+region_classes <- melbourne %>% group_by(Regionname) %>% summarize(mean_price = round(mean(Price),2))
+ggplot(region_classes, aes(x=Regionname, y=mean_price, fill=Regionname)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = mean_price), hjust = .5,
+            color = "white",
+            size = 3) + 
+  theme_classic()
+
+council_classes <- melbourne %>% group_by(CouncilArea) %>% summarize(mean_price = round(mean(Price),2))
+ggplot(council_classes, aes(x=CouncilArea, y=mean_price, fill=CouncilArea)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = mean_price), hjust = .5,
+            color = "white",
+            size = 3) + 
+  theme_classic()
+```
+
+-   Regions don't seem different enough in their mean prices to help a model estimate house price accurately
+-   There is a lot more variability in mean prices based on council area, so we will use that.
+
+#### Determining significant numeric predictors
+
+-   Rooms, Distance, Bathroom, Car, Landsize, BuildingArea, YearBuilt, Month, Year
+
+-   Look at relationships between Price and numeric predictors
+
+```{r}
+numericVals <- subset(melbourne, select=-c(SellerG, Method, X, Suburb, Date, Postcode, CouncilArea, Lattitude, Longtitude, Regionname, Type))
+
+# Compute correlation coefficients
+cor.coef <- cor(numericVals)
+cor.coef
+```
+
+-   Price has the strongest correlation with BuildingArea, and Rooms coming in 2nd.
+-   In order of correlation: BuildingArea, Rooms, Bathroom, YearBuilt, Landsize, Car, Distance, PropertyCount, Month, Year
+-   Fit a model in that order
+
+```{r}
+model <- lm(Price~BuildingArea+Rooms+Bathroom+YearBuilt+Landsize+Car+Distance+Propertycount+Month+Year)
+summary(model)
+```
+
+-   Propertycount is insignificant
+
+-   53.61% of the variation in Price can be explained by the 9 predictors in the above model.
+
+-   Which location-based categorical variable would explain more variability?
+
+```{r}
+reduced_model <- model
+alt_model_1 <- lm(Price~Regionname)
+
+alt_model_2 <- lm(Price~CouncilArea)
+
+anova(reduced_model, alt_model_1)
+anova(reduced_model, alt_model_2)
+```
+
+-   The partial f tests has the same P-values indicating that both predictors would contribute greatly to the model. Looking at the adjR2 of the each reduced model, we can assume that adding CouncilArea would increase the adjr2 a little more than Suburb
+
+```{r}
+full_model <- lm(Price~BuildingArea+Rooms+Bathroom+YearBuilt+Landsize+Car+Distance+Propertycount+Month+Year+CouncilArea)
+summary(full_model)
+```
+
+-   Propertycount became significant after adding the councilarea
+-   Check for autocorrelation
+
+```{r}
+pacf(full_model$residuals, main="PACF of Residuals")
+```
+
+-   There is autocorrelation at lag 1
+
+-   Check for multicollinearity
+
+```{r}
+vif <- vif(full_model)
+sort(vif,decreasing = T)
+```
+
+-   There is no multicollinearity in the full_model
+
+```{r}
+# Check for linearity and constant variance
+plot(full_model$fitted.values,full_model$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(full_model$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(full_model$residuals)
+qqline(full_model$residuals, col="red")
+```
+
+### How to increase AdjR2?
