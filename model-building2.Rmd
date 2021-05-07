@@ -148,4 +148,33 @@ qqnorm(full_model$residuals)
 qqline(full_model$residuals, col="red")
 ```
 
-### How to increase AdjR2?
+```{r}
+# Check if transformation needed
+bc <- boxcox(full_model)
+
+# Because 1 is not within the range, the variance is not constant and it would be best to transform the response variable. Getting the recommended transformation value.
+bc <- bc$x[which.max(bc$y)]
+bc
+```
+
+```{r}
+full_model.tran <- lm(Price**bc~BuildingArea+Rooms+Bathroom+YearBuilt+Landsize+Car+Distance+Propertycount+Month+Year+CouncilArea)
+summary(full_model.tran)
+```
+
+```{r}
+# Check for linearity and constant variance
+plot(full_model.tran$fitted.values,full_model.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(full_model.tran$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(full_model.tran$residuals)
+qqline(full_model.tran$residuals, col="red")
+
+boxcox(full_model.tran)
+```
+
+
