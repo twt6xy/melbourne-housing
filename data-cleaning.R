@@ -142,5 +142,12 @@ melbourne$Year <- year(melbourne$Date)
 # arrange by date for time series analysis purposes
 melbourne <- arrange(melbourne, Date)
 
+melbourneMassiveOutliersRemoved <- melbourne[!melbourne$BuildingArea > quantile(melbourne$BuildingArea, probs = c(.98)),]
+melbourneMassiveOutliersRemoved <- melbourneMassiveOutliersRemoved[!melbourneMassiveOutliersRemoved$Landsize > quantile(melbourne$Landsize, probs = c(.98)),]
+melbourneMassiveOutliersRemoved <- melbourneMassiveOutliersRemoved %>% filter(YearBuilt > 1750)
+
+# The most expensive house in the data is 9M but every house on that street is 800-1.2M so it's supposed to be 900.
+melbourneMassiveOutliersRemoved$Price[10789]=900000
+
 # export to a cleaned csv file
-write.csv(melbourne, file="./melbourne_cleaned.csv")
+write.csv(melbourneMassiveOutliersRemoved, file="./melbourne_cleaned.csv")
