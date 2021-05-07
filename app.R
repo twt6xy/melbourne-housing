@@ -47,9 +47,10 @@ library(car)
 library(qpcR)
 library(pwr)
 library(multcomp)
+library(corrplot)
 
 # bring in your data 
-setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
+#setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
 melb.df <- read.csv("melbourne_cleaned.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA"))
 melb.df <- data.frame(melb.df[,-1], row.names=melb.df[,1])
 melb.df$Date <- as.Date(melb.df$Date,"%Y-%m-%d")
