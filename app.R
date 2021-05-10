@@ -47,6 +47,9 @@ library(car)
 library(qpcR)
 library(pwr)
 library(multcomp)
+library(leaps)
+library(shinyMatrix)
+library(corrplot)
 
 # bring in your data 
 setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
@@ -54,6 +57,8 @@ melb.df <- read.csv("melbourne_cleaned.csv", stringsAsFactors = FALSE, na.string
 melb.df <- data.frame(melb.df[,-1], row.names=melb.df[,1])
 melb.df$Date <- as.Date(melb.df$Date,"%Y-%m-%d")
 melb.df$Date2 <- format(melb.df$Date, "%Y-%m")
+
+'%notin%' <- Negate('%in%')
 
 # mapbox token
 #MAPBOX_TOKEN <- "pk.eyJ1IjoibWRzOWIiLCJhIjoiY2tvNm40a3I4MGNsZDJvb2E1N2ZkanNwbiJ9.xP-9d8brDK8KOi5qkl0bGw"
@@ -130,7 +135,17 @@ ui <- shinyUI(dashboardPage(
                     tabBox(title = "Validate Assumptions",tabPanel("What To Look For",br(),shiny::p("Our final model should meet our three assumptions: 1) the residuals have constant variance, 2) the residuals are independent, and 4) the residuals are normally distributed.",style="color:black;text-align:justify"),br(),width = 12,style="background-color:lightgreen;border-left:8px solid green;border-top:1px solid black;border-bottom:1px solid black;border-right: 1px solid black"),
                            tabPanel("Constant Variance",plotOutput("tsmplot1.sa")), tabPanel("Independence",plotOutput("tsmplot2.sa")),tabPanel("Normality",plotOutput("tsmplot3.sa")))
                     ),
-            tabItem("mod",)
+            tabItem("mod",fluidRow(tabBox(title = "Model Prep With Quantitative Variables",tabPanel("Training vs Testing Split",numericInput("obs4", "What percentage of data should be allocated to training:", 0.7, min = 0.5, max = 1)),
+                                 tabPanel("Set Seed", numericInput("obs5", "Please set your seed so results are reproducible:", 10, min = 1, max = 100)),
+                                 tabPanel("Model Criteria", DT::dataTableOutput("regsub"))),
+                                 tabBox(title = "Inspect For Multicollinearity",tabPanel("Partial Regression Plots", plotOutput("partreg")),tabPanel("VIF Output",verbatimTextOutput("vif")))),
+                    fluidRow(tabBox(title = "Model With Quantitative Predictors",tabPanel("Chosen Transformations",matrixInput("matrix",rows = list(names = TRUE,editableNames = TRUE),value = matrix(data = rep.int(1,8), 8,  1,dimnames = list(c("Price", c("Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")),c("User Transformation"))
+                    ))), tabPanel("Model Output", verbatimTextOutput("fmodel2"))
+                    ),tabBox(title = "Check Assumptions", tabPanel("Constant Variance",plotOutput("resplotm")), tabPanel("Independence",plotOutput("acfplotm")),
+                             tabPanel("Normality",plotOutput("qplotm")))),
+                    fluidRow(tabBox(title = "Model With Quantitative & Categorical Variables", tabPanel("Model Output", verbatimTextOutput("fmodel3"))),
+                             tabBox(title = "Re-Check Assumptions", tabPanel("Constant Variance",plotOutput("resplotm2")), tabPanel("Independence",plotOutput("acfplotm2")),
+                                     tabPanel("Normality",plotOutput("qplotm2")))))
             
           )
       )
@@ -207,7 +222,7 @@ server <- shinyServer(function(input, output,session)
                menuSubItem(uiOutput("quant3")),
                menuSubItem(uiOutput("categ2"))),
       menuItem("Multivariate Linear Regression", tabName = "mod", icon = icon("laptop-code"),
-               menuSubItem(uiOutput("quant4"), tabName = "stat"),
+               menuSubItem(uiOutput("quant4"), tabName = "mod"),
                menuSubItem(uiOutput("quant5")),
                menuSubItem(uiOutput("categ3")))
       
@@ -248,9 +263,32 @@ server <- shinyServer(function(input, output,session)
     req(input$quantchoose4)
     req(input$quantchoose5)
     req(input$categchoose3)
+    req(input$obs5)
+    req(input$obs4)
     # melb.df$Year <- year(melb.df$Date)
     # melb.df$Month <- month(melb.df$Date)
-    melb.df
+    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
+    set.seed(input$obs5)
+    dt = sort(sample(nrow(melb.df), nrow(melb.df)*input$obs4))
+    train<-melb.df[dt,]
+    test<-melb.df[-dt,]
+    train
+  })
+  
+  data4 <- reactive({
+    req(input$quantchoose4)
+    req(input$quantchoose5)
+    req(input$categchoose3)
+    req(input$obs5)
+    req(input$obs4)
+    # melb.df$Year <- year(melb.df$Date)
+    # melb.df$Month <- month(melb.df$Date)
+    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
+    set.seed(input$obs5)
+    dt = sort(sample(nrow(melb.df), nrow(melb.df)*input$obs4))
+    train<-melb.df[dt,]
+    test<-melb.df[-dt,]
+    train
   })
   
   output$hist <- renderPlotly({
@@ -707,63 +745,340 @@ server <- shinyServer(function(input, output,session)
     qqline(res$residuals, col="red")
   })
   
+  output$regsub <- DT::renderDataTable({
+    data <- data3()
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    data <- data[,names(data) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")]
+    allreg <- regsubsets(y = data[,names(data) %in% input$quantchoose4], x= data[,names(data) %in% quant[which(quant != input$quantchoose)]],, nbest=9)
+    
+    ##create a "data frame" that stores the predictors in the various models considered as well as their various criteria
+    best <- as.data.frame(summary(allreg)$outmat)
+    best$p <- as.numeric(substr(rownames(best),1,1))+1
+    best$r2 <- summary(allreg)$rsq
+    best$adjr2 <- summary(allreg)$adjr2
+    best$mse <- (summary(allreg)$rss)/(dim(data)[1]-best$p)
+    best$cp <- summary(allreg)$cp
+    best$bic <- summary(allreg)$bic
+    best <- best[,c(8:13,1:7)]
+    datatable(best, extensions = 'Responsive')
+  })
+  
+  output$partreg <- renderPlot({
+    data <- data3()
+    data <- data[,names(data) %in% c(input$quantchoose4, input$quantchoose5)]
+    pred.space <- ceiling(length(input$quantchoose5)/2)
+    par(mfrow=c(pred.space,2))
+    for (l in 1:length(input$quantchoose5)){
+      result.y.x2<-lm(get(input$quantchoose4)~., data = data[,names(data) %notin% input$quantchoose5[l]]) ##fit y against other predictors
+      result.x2<-lm(get(input$quantchoose5[l])~., data = data[,names(data) %notin% input$quantchoose4]) ##fit x2 against other predictors
+      
+      res.y.x2<-result.y.x2$residuals ##store residuals. info in y not explained by x7 and x8
+      res.x2<-result.x2$residuals ##store residuals. info in x2 not explained by x7 and x8
+      
+      ##partial residual plot for x2
+      plot(res.x2,res.y.x2, main=paste0("Partial Residual Plot For ",input$quantchoose5[l]), xlab = paste("Residuals Of",input$quantchoose5[l],"Against Other Predictors"), ylab = paste("Residuals Of",input$quantchoose4,"Against Other Predictors"))
+      ##overlay regression line
+      abline(lm(res.y.x2~res.x2), col="red") 
+    }
+
+  })
+  
+  output$vif <- renderPrint({
+    data <- data3()
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+                                                                                  
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    vif(reduced) 
+  })
+  
+  
+  output$fmodel2 <- renderPrint({
+    data <- data3()
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    data <- data[,names(data) %in% quant]
+    for (c in names(data)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    summary(reduced) 
+  })
+  
+  output$fmodel3 <- renderPrint({
+    data <- data3()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    summary(reduced) 
+  })
+  
+  
+  output$resplotm <- renderPlot({
+    data <- data3()
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    data <- data[,names(data) %in% quant]
+    for (c in names(data)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    plot(reduced$fitted.values,reduced$residuals,main="Residual Plot of Full Model")
+    abline(h=0,col="red")
+  })
+  
+  output$acfplotm <- renderPlot({
+    data <- data3()
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    data <- data[,names(data) %in% quant]
+    for (c in names(data)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    acf(reduced$residuals, main="ACF of Residuals from Full Model")
+  })
+  
+  output$qplotm <- renderPlot({
+    data <- data3()
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    data <- data[,names(data) %in% quant]
+    for (c in names(data)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    qqnorm(reduced$residuals)
+    qqline(reduced$residuals, col="red")
+  })
+  
+  output$resplotm2 <- renderPlot({
+    data <- data3()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    plot(reduced$fitted.values,reduced$residuals,main="Residual Plot of Full Model")
+    abline(h=0,col="red")
+  })
+  
+  output$acfplotm2 <- renderPlot({
+    data <- data3()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    acf(reduced$residuals, main="ACF of Residuals from Full Model")
+  })
+  
+  output$qplotm2 <- renderPlot({
+    data <- data3()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    qqnorm(reduced$residuals)
+    qqline(reduced$residuals, col="red")
+  })
+  
 })
 
 
 shinyApp(ui = ui, server = server)
 
 
-# obs2 <- 0
-# obs3 <- 0
-# quantchoose2 <- "Price"
-# quantchoose3 <- "Rooms"
-# categchoose2 <- list("Type")
-# data = melb.df
-# data.y <- aggregate(data[,names(data) %in% quantchoose2], by = list(data$Year), FUN = median)
-# names(data.y) <- c("Year","Median.y")
-# data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% quantchoose2])
-# data.m <- aggregate(data[,names(data) %in% quantchoose2], by = list(data$Month), FUN = median)
-# names(data.m) <- c("Month","Median.m")
-# data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% quantchoose2])
-# data <- merge(data,data.y, by = "Year", all.x = TRUE)
-# data[,names(data) %in% quantchoose2] <- data[,names(data) %in% quantchoose2] * data$Year_Index
-# data <- merge(data,data.m, by = "Month", all.x = TRUE)
-# data[,names(data) %in% quantchoose2] <- data[,names(data) %in% quantchoose2] * data$Month_Index
-# for (f in categchoose2){
-#   data[,names(data) %in% categchoose2] <- as.factor(data[,names(data) %in% categchoose2])
-# }
-# data <- data[sample(NROW(data)),]
-# if(obs2 == 0){
-#   data$Transformed.Response <- log(data[,names(data) %in% quantchoose2])
-# } else {
-#   data$Transformed.Response <- (data[,names(data) %in% quantchoose2]) ^ obs2
-# }
-# if(obs3 == 0){
-#   data$Transformed.Predictor <- log(data[,names(data) %in% quantchoose3])
-# } else {
-#   data$Transformed.Predictor <- (data[,names(data) %in% quantchoose3]) ^ obs3
-# }
-# if(length(categchoose2) == 1){
-#   res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]), data = data)
-# } else {
-#   if(length(categchoose2) == 2){
-#     res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]), data = data)
-#   } else {
-#     if(length(categchoose2) == 3){
-#       res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]), data = data)
-#     } else {
-#       if(length(categchoose2) == 4){
-#         res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]), data = data)
-#       } else {
-#         if(length(categchoose2) == 5){
-#           res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]) + get(categchoose2[5]), data = data)
-#         } else {
-#           res<- lm(Transformed.Response~Transformed.Predictor + get(categchoose2[1]) + get(categchoose2[2]) + get(categchoose2[3]) + get(categchoose2[4]) + get(categchoose2[5]) + + get(categchoose2[6]), data = data)
-#           
-#         }
-#         
-#       }
-#     }
-#   }
-# }
-# summary(res)
