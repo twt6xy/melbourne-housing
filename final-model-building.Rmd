@@ -31,7 +31,7 @@ names(melbourne)
 ```
 
 ```{r}
-full <- lm(Price~.-X, data=melbourne)
+full <- lm(Price~., data=melbourne)
 summary(full)
 ```
 
