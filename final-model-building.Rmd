@@ -109,3 +109,18 @@ summary(reduced.tran2)
 reduced.tran3<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+log(Landsize+0.01)+BuildingArea+YearBuilt+Propertycount+CouncilArea+Year)
 summary(reduced.tran3)
 ```
+-   Stick with tran2
+
+-   Use cooks distance to view influential observations
+```{r}
+cooksd <- cooks.distance(reduced.tran2)
+plot(cooksd, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+```
+-   Check for multicollinearity
+```{r}
+library(faraway)
+vif(reduced.tran2)
+```
+
