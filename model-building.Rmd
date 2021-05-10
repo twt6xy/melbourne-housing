@@ -1,0 +1,219 @@
+---
+title: "model_building"
+author: "Christian Schroeder"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(heatmaply)
+library(faraway)
+library(MASS)
+```
+
+Import the cleaned data
+
+```{r}
+melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
+
+# ==============================================================================
+# The dataset contains multiple categorical variables, so create a list of them
+# and tell R to turn them into a factor
+# ==============================================================================
+
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb')
+melbourne[,cats] <- lapply(melbourne[,cats], factor)
+attach(melbourne)
+names(melbourne)
+```
+
+Visualize the numeric correlations
+
+```{r}
+numericVals <- subset(melbourne, select=-c(SellerG, Method, X, Suburb, Date, Postcode, CouncilArea, Lattitude, Longtitude, Regionname, Type))
+
+# Compute correlation coefficients
+cor.coef <- cor(numericVals)
+cor.coef
+
+# Compute correlation p-values
+cor.test.p <- function(x){
+    FUN <- function(x, y) cor.test(x, y)[["p.value"]]
+    z <- outer(
+      colnames(x), 
+      colnames(x), 
+      Vectorize(function(i,j) FUN(x[,i], x[,j]))
+    )
+    dimnames(z) <- list(colnames(x), colnames(x))
+    z
+}
+
+p <- cor.test.p(numericVals)
+p
+heatmaply_cor(
+  cor.coef,
+  node_type = "scatter",
+  point_size_mat = -log(p), 
+  point_size_name = "-log10(p-value)",
+  label_names = c("x", "y", "Correlation")
+)
+```
+
+### Fit SLR and Check Assumptions
+
+First, we inspected this relationship by plotting Price against Rooms. Check the linear assumptions.
+
+```{r}
+slr <- lm(Price~Rooms)
+summary(slr)
+
+# Check for linearity and constant variance
+plot(slr$fitted.values,slr$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(slr$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(slr$residuals)
+qqline(slr$residuals, col="red")
+```
+
+1.  The mean value of y, is a straight-line function of x
+
+    1.  The residuals are not evenly scattered across the horizontal axis, indicating a non-linear relationship between Price and Rooms.
+
+2.  The errors have constant variance
+
+    1.  The variance is not constant. There is a bulge in the variance of the residuals between 3 and 5 rooms, with an slight overall decrease as number of rooms goes up.
+
+3.  The errors have mean 0
+
+    1.  The errors do not have mean 0.
+
+4.  The errors are independent
+
+    1.  The ACF plot shows the errors at several levels have a correlation, so we cannot say the errors are independent.
+
+5.  The errors have a normal distribution
+
+    1.  The QQ plot indicates there is not normality of the residuals
+
+### Transform the Response, Price
+
+Because both the assumptions of linearity and constant variance are not met, we should look to stabilize the variance first by transforming the response variable.
+
+-   The boxcox plot shows a 95% CI that does not contain 1, reinforcing that the variance is not constant and that we should transform the response variable.
+
+-   Getting the optimal value to transform the response by, -0.130303
+
+```{r}
+# Check if transformation needed
+bc <- boxcox(slr, lambda = seq(-0.3, 0, 0.01))
+
+# Because 1 is not within the range, the variance is not constant and it would be best to transform the response variable. Getting the recommended transformation value.
+bc <- bc$x[which.max(bc$y)]
+bc
+```
+
+### Check Assumptions of Transformed Price Model
+
+After transforming the predictor and refitting the model, we need to recheck all the regression assumptions.
+
+```{r}
+# transform response and rebuild the model
+Price.tran <- Price**bc
+slr.tran <-lm(Price.tran~Rooms)
+
+# Check for linearity and constant variance
+plot(slr.tran$fitted.values,slr.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(slr.tran$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(slr.tran$residuals)
+qqline(slr.tran$residuals, col="red")
+
+# Boxcox
+boxcox(slr.tran, lambda = seq(0.5, 1.5, 0.01))
+```
+
+1.  The mean value of y, is a straight-line function of x
+
+    1.  The residuals are still not evenly scattered across the horizontal axis, indicating a non-linear relationship between transformed Price and Rooms.
+
+2.  The errors have constant variance
+
+    1.  The variance of the residuals is a lot more constant. 1 now lies within the 95% CI, so no further transformation to the response is needed.
+
+3.  The errors have mean 0
+
+    1.  There is still a noticeable pattern, so the errors do not have mean 0.
+
+4.  The errors are independent
+
+    1.  The ACF plot shows the errors at several levels still have a correlation, so we cannot say the errors are independent.
+
+5.  The errors have a normal distribution
+
+    1.  The QQ plot indicates there is normality of the residuals
+
+### Transform the Predictor, BuildingArea
+
+Because the residuals are not evenly scattered across the horizontal axis, the linearity assumption is not met and we need to transform the predictor.
+
+-   Do a log transformation of BuildingArea
+
+```{r}
+# transform predictor and rebuild the model
+Rooms.tran <- log(Rooms)
+slr.tran2 <-lm(Price.tran~Rooms.tran)
+
+# Check for linearity and constant variance
+plot(slr.tran2$fitted.values,slr.tran2$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(slr.tran2$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(slr.tran2$residuals)
+qqline(slr.tran2$residuals, col="red")
+
+# Boxcox
+boxcox(slr.tran2)
+```
+
+Transform the response again?
+
+```{r}
+bc2 <- boxcox(slr.tran2)
+bc2 <- bc2$x[which.max(bc2$y)]
+bc2
+```
+
+```{r}
+# transform response and rebuild the model
+Price.tran2 <- Price.tran**bc2
+slr.tran3 <-lm(Price.tran2~Rooms.tran)
+
+# Check for linearity and constant variance
+plot(slr.tran3$fitted.values,slr.tran3$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(slr.tran3$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(slr.tran3$residuals)
+qqline(slr.tran3$residuals, col="red")
+
+# Boxcox
+boxcox(slr.tran3, lambda = seq(0.5, 1.5, 0.01))
+```
+
+-   All assumptions met except for independent errors, ACF plot show significant lag
