@@ -1,0 +1,156 @@
+---
+title: "model_building"
+author: "Christian Schroeder"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(heatmaply)
+library(faraway)
+library(MASS)
+library(tidyverse) 
+```
+
+Import the cleaned data
+
+```{r}
+melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne = subset(melbourne, select = -c(X) )
+# ==============================================================================
+# The dataset contains multiple categorical variables, so create a list of them
+# and tell R to turn them into a factor
+# ==============================================================================
+
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb', 'Year', 'Month')
+melbourne[,cats] <- lapply(melbourne[,cats], factor)
+melbourne$Population <- as.numeric(gsub(",","",melbourne$Population))
+attach(melbourne)
+names(melbourne)
+```
+
+```{r}
+full <- lm(Price~.-Suburb, data=melbourne)
+summary(full)
+```
+
+-   drop Postcode, Method, Month, Latitude, Longitude, Regionname, Suburb, Date
+
+```{r}
+reduced <- lm(Price~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year+SellerG)
+summary(reduced)
+```
+
+-   Test if can drop the predictors
+
+```{r}
+anova(reduced,full)
+```
+
+-   We can drop Postcode, Method, Month, Latitude, Longitude, Regionname, Suburb, Date
+
+Transform?
+
+```{r}
+# Check if transformation needed
+bc <- boxcox(reduced, lambda = seq(-0.3, 0.3, 0.01))
+
+# Because 1 is not within the range, the variance is not constant and it would be best to transform the response variable. Getting the recommended transformation value.
+bc <- bc$x[which.max(bc$y)]
+bc
+```
+
+-   transform
+
+```{r}
+# transform response and rebuild the model
+Price.tran <- Price**bc
+reduced.tran <-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year+SellerG)
+summary(reduced.tran)
+```
+
+```{r}
+# Check for linearity and constant variance
+plot(reduced.tran$fitted.values,reduced.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(reduced.tran$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(reduced.tran$residuals)
+qqline(reduced.tran$residuals, col="red")
+
+# Boxcox
+boxcox(reduced.tran, lambda = seq(-5, 5, 0.01))
+```
+
+-   maybe normality is not met?
+
+-   Should we now drop SellerG?
+
+```{r}
+reduced.tran2<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year)
+anova(reduced.tran, reduced.tran2)
+```
+
+-   SellerG should be dropped
+
+```{r}
+summary(reduced.tran2)
+```
+
+-   Still need to transform a predictor?
+
+-   Take the log of everything??
+
+```{r}
+reduced.tran3<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+log(Landsize+0.01)+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year)
+summary(reduced.tran3)
+```
+-   Stick with tran2
+
+-   Use cooks distance to view influential observations
+```{r}
+cooksd <- cooks.distance(reduced.tran2)
+plot(cooksd, pch="*", cex=2, main="Influential Observations by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
+```
+-   Check for multicollinearity
+```{r}
+library(faraway)
+vif(reduced.tran2)
+```
+
+-   Propertycount and Population have very high VIF's
+
+-   Check if we can drop Propertycount
+```{r}
+reduced.tran4<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Walk.Score+Population+CouncilArea+Year)
+anova(reduced.tran2, reduced.tran4)
+```
+```{r}
+summary(reduced.tran4)
+```
+```{r}
+vif(reduced.tran4)
+```
+
+-   All VIF's now below 10
+
+-   Check assumptions
+```{r}
+# Check for linearity and constant variance
+plot(reduced.tran4$fitted.values,reduced.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(reduced.tran4$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(reduced.tran4$residuals)
+qqline(reduced.tran4$residuals, col="red")
+```
+

@@ -5,6 +5,8 @@ library(lubridate) # Datetime
 
 ###you need to read in your NA's, leaving stringasfactors as false, but true would save you some work later
 melbourne <- read.csv("melb_data_raw.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA","NULL"), header=TRUE)
+walkability <- read.csv("suburbWalkabilityPopulation.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA","NULL"), header=TRUE)
+melbourne <- merge(melbourne, walkability, on="Suburb")
 
 # view if any null columns
 colSums(is.na(melbourne))
@@ -147,7 +149,9 @@ melbourneMassiveOutliersRemoved <- melbourneMassiveOutliersRemoved[!melbourneMas
 melbourneMassiveOutliersRemoved <- melbourneMassiveOutliersRemoved %>% filter(YearBuilt > 1750)
 
 # The most expensive house in the data is 9M but every house on that street is 800-1.2M so it's supposed to be 900.
-melbourneMassiveOutliersRemoved$Price[10789]=900000
+melbourneMassiveOutliersRemoved$Price[10707]=900000
 
+colSums(is.na(melbourneMassiveOutliersRemoved))
+melbourneMassiveOutliersRemoved = subset(melbourneMassiveOutliersRemoved, select = -c(X) )
 # export to a cleaned csv file
 write.csv(melbourneMassiveOutliersRemoved, file="./melbourne_cleaned.csv")
