@@ -20,6 +20,7 @@ library(ggcorrplot)
 ```
 ```{r}
 melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne = subset(melbourne, select = -c(X) )
 melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
 
 # ==============================================================================
@@ -27,13 +28,14 @@ melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
 # and tell R to turn them into a factor
 # ==============================================================================
 
-cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb')
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb', 'Year', 'Month')
+melbourne$Population <- as.numeric(gsub(",","",melbourne$Population))
 melbourne[,cats] <- lapply(melbourne[,cats], factor)
 ```
 
 ### Visualizing the Numeric Correlations, Point Size Changes According to Correlation Test p-values
 ```{r}
-numericVals <- subset(melbourne, select=-c(SellerG, Method, X, Suburb, Date, Postcode, CouncilArea, Lattitude, Longtitude, Regionname, Type))
+numericVals <- subset(melbourne, select=-c(SellerG, Method, Suburb, Date, Postcode, CouncilArea, Lattitude, Longtitude, Regionname, Type, Year, Month))
 
 # Compute correlation coefficients
 cor.coef <- cor(numericVals)
@@ -142,7 +144,7 @@ fig
 
 ### Creating Models
 ```{r}
-pricingModel <- lm(Price~Month+Year+Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+CouncilArea+Propertycount, data=melbourne)
+pricingModel <- lm(Price~Month+Year+Landsize+Rooms+Distance+Bathroom+Car+BuildingArea+YearBuilt+CouncilArea+Propertycount+Walk.Score+Population, data=melbourne)
 summary(pricingModel)
 ```
 

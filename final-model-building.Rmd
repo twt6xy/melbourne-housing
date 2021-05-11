@@ -17,28 +17,28 @@ Import the cleaned data
 
 ```{r}
 melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
-melbourne$YearBuilt<-round(as.numeric(melbourne$YearBuilt), 0)
-
+melbourne = subset(melbourne, select = -c(X) )
 # ==============================================================================
 # The dataset contains multiple categorical variables, so create a list of them
 # and tell R to turn them into a factor
 # ==============================================================================
 
-cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb')
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb', 'Year', 'Month')
 melbourne[,cats] <- lapply(melbourne[,cats], factor)
+melbourne$Population <- as.numeric(gsub(",","",melbourne$Population))
 attach(melbourne)
 names(melbourne)
 ```
 
 ```{r}
-full <- lm(Price~., data=melbourne)
+full <- lm(Price~.-Suburb, data=melbourne)
 summary(full)
 ```
 
 -   drop Postcode, Method, Month, Latitude, Longitude, Regionname, Suburb, Date
 
 ```{r}
-reduced <- lm(Price~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+CouncilArea+Year+SellerG)
+reduced <- lm(Price~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year+SellerG)
 summary(reduced)
 ```
 
@@ -66,7 +66,7 @@ bc
 ```{r}
 # transform response and rebuild the model
 Price.tran <- Price**bc
-reduced.tran <-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+CouncilArea+Year+SellerG)
+reduced.tran <-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year+SellerG)
 summary(reduced.tran)
 ```
 
@@ -91,7 +91,7 @@ boxcox(reduced.tran, lambda = seq(-5, 5, 0.01))
 -   Should we now drop SellerG?
 
 ```{r}
-reduced.tran2<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+CouncilArea+Postcode+Year)
+reduced.tran2<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year)
 anova(reduced.tran, reduced.tran2)
 ```
 
@@ -106,7 +106,7 @@ summary(reduced.tran2)
 -   Take the log of everything??
 
 ```{r}
-reduced.tran3<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+log(Landsize+0.01)+BuildingArea+YearBuilt+Propertycount+CouncilArea+Year)
+reduced.tran3<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+log(Landsize+0.01)+BuildingArea+YearBuilt+Propertycount+Walk.Score+Population+CouncilArea+Year)
 summary(reduced.tran3)
 ```
 -   Stick with tran2
@@ -122,5 +122,35 @@ text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T
 ```{r}
 library(faraway)
 vif(reduced.tran2)
+```
+
+-   Propertycount and Population have very high VIF's
+
+-   Check if we can drop Propertycount
+```{r}
+reduced.tran4<-lm(Price.tran~Rooms+Type+Distance+Bathroom+Car+Landsize+BuildingArea+YearBuilt+Walk.Score+Population+CouncilArea+Year)
+anova(reduced.tran2, reduced.tran4)
+```
+```{r}
+summary(reduced.tran4)
+```
+```{r}
+vif(reduced.tran4)
+```
+
+-   All VIF's now below 10
+
+-   Check assumptions
+```{r}
+# Check for linearity and constant variance
+plot(reduced.tran4$fitted.values,reduced.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(reduced.tran4$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(reduced.tran4$residuals)
+qqline(reduced.tran4$residuals, col="red")
 ```
 
