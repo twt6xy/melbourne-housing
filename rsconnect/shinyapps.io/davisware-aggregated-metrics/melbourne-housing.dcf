@@ -1,0 +1,13 @@
+name: melbourne-housing
+title:
+username:
+account: davisware-aggregated-metrics
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4106601
+bundleId: 4583457
+url: https://msachs-data-science.shinyapps.io/melbourne-housing/
+when: 1620690320.48991
+lastSyncTime: 1620690320.48991
+asMultiple: FALSE
+asStatic: FALSE

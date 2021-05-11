@@ -47,15 +47,13 @@ library(car)
 library(qpcR)
 library(pwr)
 library(multcomp)
-<<<<<<< HEAD
 library(leaps)
 library(shinyMatrix)
-=======
->>>>>>> 8f286f9bdf1bd0c38b0aa3f83fcb82cbe13cd671
 library(corrplot)
+library(conquer)
 
 # bring in your data 
-#setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
+setwd(dir = "C:/Users/MSachs.MSACHS-DELL/Documents/UVA MSDS/STAT 6021/melbourne-housing")
 melb.df <- read.csv("melbourne_cleaned.csv", stringsAsFactors = FALSE, na.strings = c(""," ","NA"))
 melb.df <- data.frame(melb.df[,-1], row.names=melb.df[,1])
 melb.df$Date <- as.Date(melb.df$Date,"%Y-%m-%d")
@@ -141,14 +139,14 @@ ui <- shinyUI(dashboardPage(
             tabItem("mod",fluidRow(tabBox(title = "Model Prep With Quantitative Variables",tabPanel("Training vs Testing Split",numericInput("obs4", "What percentage of data should be allocated to training:", 0.7, min = 0.5, max = 1)),
                                  tabPanel("Set Seed", numericInput("obs5", "Please set your seed so results are reproducible:", 10, min = 1, max = 100)),
                                  tabPanel("Model Criteria", DT::dataTableOutput("regsub"))),
-                                 tabBox(title = "Inspect For Multicollinearity",tabPanel("Partial Regression Plots", plotOutput("partreg")),tabPanel("VIF Output",verbatimTextOutput("vif")))),
+                                 tabBox(title = "Inspect For Multicollinearity & Outliers",tabPanel("Residual Plots", plotOutput("totresplotm")),tabPanel("High Leverage Points", DT::dataTableOutput("lev")),tabPanel("DFFIT's", DT::dataTableOutput("dffits")),tabPanel("Cook's Distance", DT::dataTableOutput("cook")),tabPanel("Partial Regression Plots", plotOutput("partreg")),tabPanel("VIF Output",verbatimTextOutput("vif")))),
                     fluidRow(tabBox(title = "Model With Quantitative Predictors",tabPanel("Chosen Transformations",matrixInput("matrix",rows = list(names = TRUE,editableNames = TRUE),value = matrix(data = rep.int(1,8), 8,  1,dimnames = list(c("Price", c("Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")),c("User Transformation"))
                     ))), tabPanel("Model Output", verbatimTextOutput("fmodel2"))
                     ),tabBox(title = "Check Assumptions", tabPanel("Constant Variance",plotOutput("resplotm")), tabPanel("Independence",plotOutput("acfplotm")),
                              tabPanel("Normality",plotOutput("qplotm")))),
-                    fluidRow(tabBox(title = "Model With Quantitative & Categorical Variables", tabPanel("Model Output", verbatimTextOutput("fmodel3"))),
+                    fluidRow(tabBox(title = "Model With Quantitative & Categorical Variables", tabPanel("Model Output", verbatimTextOutput("fmodel3")),tabPanel("Model Accuracy",valueBoxOutput("fpred")), tabPanel("Prediction Interval Plot",plotOutput("fpredplot"))),
                              tabBox(title = "Re-Check Assumptions", tabPanel("Constant Variance",plotOutput("resplotm2")), tabPanel("Independence",plotOutput("acfplotm2")),
-                                     tabPanel("Normality",plotOutput("qplotm2")))))
+                                     tabPanel("Normality",plotOutput("qplotm2")),tabPanel("Residual Plots", plotOutput("totresplotm2")),tabPanel("High Leverage Points", DT::dataTableOutput("lev2")),tabPanel("DFFIT's", DT::dataTableOutput("dffits2")),tabPanel("Cook's Distance", DT::dataTableOutput("cook2")),tabPanel("Partial Regression Plots", plotOutput("partreg2")),tabPanel("VIF Output",verbatimTextOutput("vif2")))))
             
           )
       )
@@ -164,7 +162,7 @@ server <- shinyServer(function(input, output,session)
   shinyjs::show("app-content")
   
   output$categ <- renderUI({
-    categ <- sort(c("Type","Postcode","Suburb","CouncilArea","Regionname","SellerG"), decreasing = FALSE)
+    categ <- sort(c("Type","Postcode","Suburb","CouncilArea","Regionname","SellerG","Method"), decreasing = FALSE)
     selectInput("categchoose", "Select Categorical Variable:", categ, selected = categ[1], multiple = FALSE)
   })
   
@@ -180,7 +178,7 @@ server <- shinyServer(function(input, output,session)
   })
   
   output$categ2 <- renderUI({
-    categ2 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname"), decreasing = FALSE)
+    categ2 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Method"), decreasing = FALSE)
     selectInput("categchoose2", "Select Categorical Predictor Variable(s) To Add:", categ2, selected = categ2[1], multiple = TRUE)
   })
   
@@ -195,9 +193,11 @@ server <- shinyServer(function(input, output,session)
   })
   
   output$categ3 <- renderUI({
-    categ3 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname"), decreasing = FALSE)
+    categ3 <- sort(c("Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Method"), decreasing = FALSE)
     selectInput("categchoose3", "Select Categorical Predictor Variable(s) To Add:", categ3, selected = categ3[1], multiple = TRUE)
   })
+  
+  
   
   output$quant5 <- renderUI({
     quant5 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"), decreasing = FALSE)
@@ -207,6 +207,11 @@ server <- shinyServer(function(input, output,session)
   output$quant4 <- renderUI({
     quant4 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"),decreasing = FALSE)
     selectInput("quantchoose4", "Select Response Variable:", quant4, selected = "Price", multiple = FALSE)
+  })
+  
+  output$quant6 <- renderUI({
+    quant6 <- sort(c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt"), decreasing = FALSE)
+    selectInput("quantchoose6", "Select Predictor Variable To Plot Predicted Values Against:", quant6, selected = "Rooms", multiple = FALSE)
   })
   
   output$menu <- renderMenu({
@@ -227,7 +232,8 @@ server <- shinyServer(function(input, output,session)
       menuItem("Multivariate Linear Regression", tabName = "mod", icon = icon("laptop-code"),
                menuSubItem(uiOutput("quant4"), tabName = "mod"),
                menuSubItem(uiOutput("quant5")),
-               menuSubItem(uiOutput("categ3")))
+               menuSubItem(uiOutput("categ3")),
+               menuSubItem(uiOutput("quant6")))
       
     )
   })
@@ -270,7 +276,7 @@ server <- shinyServer(function(input, output,session)
     req(input$obs4)
     # melb.df$Year <- year(melb.df$Date)
     # melb.df$Month <- month(melb.df$Date)
-    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
+    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","Method","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
     set.seed(input$obs5)
     dt = sort(sample(nrow(melb.df), nrow(melb.df)*input$obs4))
     train<-melb.df[dt,]
@@ -286,7 +292,7 @@ server <- shinyServer(function(input, output,session)
     req(input$obs4)
     # melb.df$Year <- year(melb.df$Date)
     # melb.df$Month <- month(melb.df$Date)
-    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
+    melb.df <- melb.df[,names(melb.df) %in% c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt","Type","Method","SellerG","Postcode","Suburb","CouncilArea","Regionname","Year","Month")]
     set.seed(input$obs5)
     dt = sort(sample(nrow(melb.df), nrow(melb.df)*input$obs4))
     train<-melb.df[dt,]
@@ -772,8 +778,10 @@ server <- shinyServer(function(input, output,session)
     pred.space <- ceiling(length(input$quantchoose5)/2)
     par(mfrow=c(pred.space,2))
     for (l in 1:length(input$quantchoose5)){
-      result.y.x2<-lm(get(input$quantchoose4)~., data = data[,names(data) %notin% input$quantchoose5[l]]) ##fit y against other predictors
-      result.x2<-lm(get(input$quantchoose5[l])~., data = data[,names(data) %notin% input$quantchoose4]) ##fit x2 against other predictors
+      f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5[input$quantchoose5 %notin% input$quantchoose5[l]], collapse = " + ")), sep = " ~ "))
+      f2 <- as.formula(paste(input$quantchoose5[l], paste(paste(input$quantchoose5[input$quantchoose5 %notin% input$quantchoose5[l]], collapse = " + ")), sep = " ~ "))
+      result.y.x2<-lm(f, data = data) ##fit y against other predictors
+      result.x2<-lm(f2, data = data) ##fit x2 against other predictors
       
       res.y.x2<-result.y.x2$residuals ##store residuals. info in y not explained by x7 and x8
       res.x2<-result.x2$residuals ##store residuals. info in x2 not explained by x7 and x8
@@ -813,6 +821,146 @@ server <- shinyServer(function(input, output,session)
     vif(reduced) 
   })
   
+  output$totresplotm <- renderPlot({
+    data <- data3()
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    res<-reduced$residuals ##residuals
+    
+    student.res<-rstandard(reduced) ##studentized residuals
+    
+    ext.student.res<-rstudent(reduced) ##externally studentized residuals
+    
+    
+    ##all the residual plots. They look the same (generally) but the scale for the ordinary residuals is different
+    par(mfrow=c(1,3))
+    plot(reduced$fitted.values,res,main="Residuals")
+    plot(reduced$fitted.values,student.res,main="Studentized Residuals")
+    plot(reduced$fitted.values,ext.student.res,main="Externally  Studentized Residuals")
+  })
+  
+  output$lev <- DT::renderDataTable({
+    data <- data3()
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    ext.student.res<-rstudent(reduced)
+    ##this check which externally studentized residuals are greater than the critical value
+    ext.student.res[abs(ext.student.res)>qt(1-0.05/(2*n), n-p-1)]
+    ##returns a null, so no observations are outlying in the response.
+    
+    lev<-lm.influence(reduced)$hat ##leverages
+    lev <- as.data.frame(lev[lev>2*p/n])
+    datatable(lev, extensions = 'Responsive')
+  })
+  
+  output$dffits <- DT::renderDataTable({
+    data <- data3()
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    DFFITS<-dffits(reduced)
+    
+    DFFITS <- as.data.frame(DFFITS[abs(DFFITS)>2*sqrt(p/n)])
+    datatable(DFFITS, extensions = 'Responsive')
+  })
+  
+  
+  output$cook <- DT::renderDataTable({
+    data <- data3()
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    COOKS<-cooks.distance(reduced)
+    COOKS <- as.data.frame(COOKS)
+    COOKS <- as.data.frame(COOKS[COOKS>qf(0.5,p,n-p)])
+    datatable(COOKS, extensions = 'Responsive')
+  })
+  
+  
   
   output$fmodel2 <- renderPrint({
     data <- data3()
@@ -850,6 +998,237 @@ server <- shinyServer(function(input, output,session)
     summary(reduced) 
   })
   
+  output$partreg2 <- renderPlot({
+    data <- data3()
+    data <- data[,names(data) %in% c(input$quantchoose4, input$quantchoose5)]
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    pred.space <- ceiling(length(input$quantchoose5)/2)
+    par(mfrow=c(pred.space,2))
+    for (l in 1:length(input$quantchoose5)){
+      f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5[input$quantchoose5 %notin% input$quantchoose5[l]], collapse = " + ")), sep = " ~ "))
+      f2 <- as.formula(paste(input$quantchoose5[l], paste(paste(input$quantchoose5[input$quantchoose5 %notin% input$quantchoose5[l]], collapse = " + ")), sep = " ~ "))
+      result.y.x2<-lm(f, data = data) ##fit y against other predictors
+      result.x2<-lm(f2, data = data) ##fit x2 against other predictors
+      
+      res.y.x2<-result.y.x2$residuals ##store residuals. info in y not explained by x7 and x8
+      res.x2<-result.x2$residuals ##store residuals. info in x2 not explained by x7 and x8
+      
+      ##partial residual plot for x2
+      plot(res.x2,res.y.x2, main=paste0("Partial Residual Plot For ",input$quantchoose5[l]), xlab = paste("Residuals Of",input$quantchoose5[l],"Against Other Predictors"), ylab = paste("Residuals Of",input$quantchoose4,"Against Other Predictors"))
+      ##overlay regression line
+      abline(lm(res.y.x2~res.x2), col="red") 
+    }
+    
+  })
+  
+  output$vif2 <- renderPrint({
+    data <- data3()
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    vif(reduced) 
+  })
+  
+  output$totresplotm2 <- renderPlot({
+    data <- data3()
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    res<-reduced$residuals ##residuals
+    
+    student.res<-rstandard(reduced) ##studentized residuals
+    
+    ext.student.res<-rstudent(reduced) ##externally studentized residuals
+    
+    
+    ##all the residual plots. They look the same (generally) but the scale for the ordinary residuals is different
+    par(mfrow=c(1,3))
+    plot(reduced$fitted.values,res,main="Residuals")
+    plot(reduced$fitted.values,student.res,main="Studentized Residuals")
+    plot(reduced$fitted.values,ext.student.res,main="Externally  Studentized Residuals")
+  })
+  
+  output$lev2 <- DT::renderDataTable({
+    data <- data3()
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    ext.student.res<-rstudent(reduced)
+    ##this check which externally studentized residuals are greater than the critical value
+    ext.student.res[abs(ext.student.res)>qt(1-0.05/(2*n), n-p-1)]
+    ##returns a null, so no observations are outlying in the response.
+    
+    lev<-lm.influence(reduced)$hat ##leverages
+    lev <- as.data.frame(lev[lev>2*p/n])
+    datatable(lev, extensions = 'Responsive')
+  })
+  
+  output$dffits2 <- DT::renderDataTable({
+    data <- data3()
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    DFFITS<-dffits(reduced)
+    
+    DFFITS <- as.data.frame(DFFITS[abs(DFFITS)>2*sqrt(p/n)])
+    datatable(DFFITS, extensions = 'Responsive')
+  })
+  
+  
+  output$cook2 <- DT::renderDataTable({
+    data <- data3()
+    for (c in c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    if(length(input$quantchoose5) == 2){
+      reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]), data=data) 
+    } else {
+      if(length(input$quantchoose5) == 3){
+        reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]), data=data) 
+      } else {
+        if(length(input$quantchoose5) == 4){
+          reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) +  get(input$quantchoose5[4]), data=data) 
+        } else {
+          if(length(input$quantchoose5) == 5){
+            reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]), data=data) 
+          } else {
+            if(length(input$quantchoose5) == 6){
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]), data=data) 
+            } else {
+              reduced<-lm(get(input$quantchoose4)~ get(input$quantchoose5[1]) + get(input$quantchoose5[2]) + get(input$quantchoose5[3]) + get(input$quantchoose5[4]) + get(input$quantchoose5[5]) + get(input$quantchoose5[6]) +  get(input$quantchoose5[7]), data=data) 
+              
+            }                                                                    
+          }                                                                  
+        }        
+      }
+    }
+    n<-length(data)
+    p<- length(input$quantchoose5) + 1
+    COOKS<-cooks.distance(reduced)
+    COOKS <- as.data.frame(COOKS)
+    COOKS <- as.data.frame(COOKS[COOKS>qf(0.5,p,n-p)])
+    datatable(COOKS, extensions = 'Responsive')
+  })
+  
+  
   output$fmodel3 <- renderPrint({
     data <- data3()
     data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
@@ -879,6 +1258,113 @@ server <- shinyServer(function(input, output,session)
     summary(reduced) 
   })
   
+  output$fpred <- renderValueBox({
+    data <- data3()
+    data2 <- data4()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    for (c in quant[quant %notin% input$quantchoose4]){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data2[,names(data2) == c] <- log(data2[,names(data2) == c])
+      } else {
+        data2[,names(data2) == c] <- data2[,names(data2) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    
+    pred <- predict(reduced, newdata = data2)
+    data2 <- cbind.data.frame(data2,pred)
+    for (c in c(input$quantchoose4)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        # data2[,names(data2) == c] <- log(data2[,names(data2) == c])
+        data2[,names(data2) == "pred"] <- exp(data2[,names(data2) == "pred"])
+      } else {
+        # data2[,names(data2) == c] <- data2[,names(data2) == c] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        data2[,names(data2) == "pred"] <- data2[,names(data2) == "pred"] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        
+      }
+    }
+    valueBox(
+      paste0(round(mean(abs((data2[,names(data2) %in% "pred"] - data2[,names(data2) %in% input$quantchoose4])/data2[,names(data2) %in% input$quantchoose4]))*100, digits = 2),"%"), "MAPE", icon = icon("list-alt", lib = "glyphicon"), color = "blue")
+  
+  })
+  
+  output$fpredplot <- renderPlot({
+    data <- data3()
+    data2 <- data4()
+    data.y <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Year), FUN = median)
+    names(data.y) <- c("Year","Median.y")
+    data.y$Year_Index <- data.y$Median.y/median(data[,names(data) %in% input$quantchoose4])
+    data.m <- aggregate(data[,names(data) %in% input$quantchoose4], by = list(data$Month), FUN = median)
+    names(data.m) <- c("Month","Median.m")
+    data.m$Month_Index <- data.m$Median.m/median(data[,names(data) %in% input$quantchoose4])
+    data <- merge(data,data.y, by = "Year", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Year_Index
+    data <- merge(data,data.m, by = "Month", all.x = TRUE)
+    data[,names(data) %in% input$quantchoose4] <- data[,names(data) %in% input$quantchoose4] * data$Month_Index
+    for (f in input$categchoose3){
+      data[,names(data) %in% f] <- as.factor(data[,names(data) %in% f])
+    }
+    quant <- c("Price","Rooms","Bathroom","Distance","Car","Landsize","BuildingArea","YearBuilt")
+    # data <- data[,names(data) %in% quant]
+    for (c in quant){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data[,names(data) == c] <- log(data[,names(data) == c])
+      } else {
+        data[,names(data) == c] <- data[,names(data) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    f <- as.formula(paste(input$quantchoose4, paste(paste(input$quantchoose5, collapse = " + "), ' + ',paste(input$categchoose3, collapse = " + ")), sep = " ~ "))
+    reduced <- lm(f, data = data)
+    for (c in quant[quant %notin% input$quantchoose4]){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        data2[,names(data2) == c] <- log(data2[,names(data2) == c])
+      } else {
+        data2[,names(data2) == c] <- data2[,names(data2) == c] ^ as.numeric(input$matrix[rownames(input$matrix) == c,])
+      }
+    }
+    pred <- predict(reduced, newdata = data2)
+    pred_range <- predict(reduced, newdata = data2, level=0.95, interval="prediction")
+    data2 <- cbind.data.frame(data2,pred,pred_range)
+    for (c in c(input$quantchoose4)){
+      if(as.numeric(input$matrix[rownames(input$matrix) == c,]) == 0){
+        # data2[,names(data2) == c] <- log(data2[,names(data2) == c])
+        data2[,names(data2) == "pred"] <- exp(data2[,names(data2) == "pred"])
+        data2[,names(data2) == "lwr"] <- exp(data2[,names(data2) == "lwr"])
+        data2[,names(data2) == "upr"] <- exp(data2[,names(data2) == "upr"])
+      } else {
+        # data2[,names(data2) == c] <- data2[,names(data2) == c] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        data2[,names(data2) == "pred"] <- data2[,names(data2) == "pred"] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        data2[,names(data2) == "lwr"] <- data2[,names(data2) == "lwr"] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        data2[,names(data2) == "upr"] <- data2[,names(data2) == "upr"] ^ (1/as.numeric(input$matrix[rownames(input$matrix) == c,]))
+        
+      }
+    }
+    ggplot(data=data2, aes(x = get(input$quantchoose6))) + geom_point(aes(y = get(input$quantchoose4))) + 
+      geom_ribbon(data=data2, aes(ymin = lwr, ymax = upr), fill = "blue", alpha = 0.2) 
+    
+  })
   
   output$resplotm <- renderPlot({
     data <- data3()
