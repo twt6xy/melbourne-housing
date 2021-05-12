@@ -1,0 +1,180 @@
+---
+title: "Forward Selection for Baseline Model"
+author: "Will Tyree"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(heatmaply)
+library(faraway)
+library(MASS)
+library(tidyverse) 
+```
+
+### Import Data, create full and intercept only models, perform forward selection
+```{r}
+melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
+melbourne = subset(melbourne, select = -c(X) )
+cats <- c('Type', 'Regionname', 'Postcode', 'CouncilArea', 'Suburb', 'Year', 'Month')
+melbourne[,cats] <- lapply(melbourne[,cats], factor)
+melbourne$Population <- as.numeric(gsub(",","",melbourne$Population))
+
+regnull <- lm(Price~1, data=melbourne)
+regfull <- lm(Price~., data=melbourne)
+step(regnull, scope=list(lower=regnull, upper=regfull), direction="forward")
+```
+
+### Creating the baseline model from the forward selection results
+```{r}
+model <- lm(Price ~ BuildingArea + Suburb + Type + Landsize + 
+    CouncilArea + Bathroom + YearBuilt + SellerG + Year + Rooms + 
+    Method + Car + Walk.Score + Month + Lattitude + Distance, 
+    data = melbourne)
+summary(model)
+```
+
+### Checking regression assumptions
+```{r}
+plot(model$fitted.values,model$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(model$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(model$residuals)
+qqline(model$residuals, col="red")
+```
+### Getting optimal box cox value to transform the response
+```{r}
+bc <- boxcox(model, lambda = seq(-0.3, 0.3, 0.01))
+
+# Because 1 is not within the range, the variance is not constant and it would be best to transform the response variable. Getting the recommended transformation value.
+bc <- bc$x[which.max(bc$y)]
+bc
+```
+### Transforming the response with optimal BC
+```{r}
+Price.tran <- melbourne$Price**bc
+model.tran <-lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
+    CouncilArea + Bathroom + YearBuilt + SellerG + Year + Rooms + 
+    Method + Car + Walk.Score + Month + Lattitude + Distance, 
+    data = melbourne)
+summary(model.tran)
+```
+
+### Checking assumptions on transformed model
+```{r}
+plot(model.tran$fitted.values,model.tran$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(model.tran$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(model.tran$residuals)
+qqline(model.tran$residuals, col="red")
+```
+
+### Check for multicollinearity
+```{r}
+library(faraway)
+vif(model.tran)
+```
+
+### Partial Regression Plots
+```{r}
+result.y.rooms <- lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
+    CouncilArea + Bathroom + YearBuilt + SellerG + Year + 
+    Method + Car + Walk.Score + Month + Lattitude + Distance, 
+    data = melbourne)
+result.rooms <- lm(Rooms~BuildingArea + Suburb + Type + Landsize + 
+    CouncilArea + Bathroom + YearBuilt + SellerG + Year + 
+    Method + Car + Walk.Score + Month + Lattitude + Distance, 
+    data = melbourne)
+res.y.rooms <- result.y.rooms$residuals
+res.rooms <- result.rooms$residuals
+plot(res.rooms, res.y.rooms, main="Partial Regression Plot of Rooms")
+abline(h=0)
+```
+### Check normality for individual predictors that may need transformation
+```{r}
+par(mfrow=c(1,2))
+qqnorm((melbourne$Rooms),main="Normal Q-Q Plot of Rooms");qqline((melbourne$Rooms))
+qqnorm(log(melbourne$Rooms),main="Normal Q-Q Plot of log Rooms");qqline(log(melbourne$Rooms))
+```
+
+### Fitting model with rooms log transformed
+```{r}
+Price.tran <- melbourne$Price**bc
+model.tran.room <-lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
+    CouncilArea + Bathroom + YearBuilt + SellerG + Year + log(Rooms+0.01) + 
+    Method + log(Car+0.01) + Walk.Score + Month + Lattitude + Distance, 
+    data = melbourne)
+summary(model.tran.room)
+```
+
+### Checking assumptions again
+```{r}
+plot(model.tran.room$fitted.values,model.tran.room$residuals, main="Plot of Residuals against Fitted Values")
+abline(h=0,col="red")
+
+# Check for independence
+acf(model.tran.room$residuals, main="ACF of Residuals")
+
+# Check normality
+qqnorm(model.tran.room$residuals)
+qqline(model.tran.room$residuals, col="red")
+```
+### Model Diagnostics
+```{r}
+res <- model.tran.room$residuals
+student.res <- rstandard(model.tran.room)
+ext.student.res <- rstudent(model.tran.room)
+
+par(mfrow=c(1,3))
+plot(model.tran.room$fitted.values, res, main="Residuals")
+plot(model.tran.room$fitted.values, student.res, main="Studentized Residuals")
+plot(model.tran.room$fitted.values, ext.student.res, main="Externally Studentized Residuals")
+```
+```{r}
+n <- length(melbourne)
+p <- 17
+cv <- qt(1-0.05/(2*n), n-p-1)
+
+# another way is to make a plot
+plot(ext.student.res, main="Externally Studentized Residuals", ylim=c(-15,15))
+abline(h=qt(1-0.05/(2*n), n-p-1), col = "red")
+abline(h=-qt(1-0.05/(2*n), n-p-1), col = "red") # everything must be within line
+ext.student.res[abs(ext.student.res)>qt(1-0.05/(2*n), n-p-1)] 
+```
+
+### Inspect outliers in the response - will need to find them in the raw data that contains the address
+```{r}
+melbourne_raw <- read.csv("melb_data_raw.csv", header=TRUE)
+```
+
+* 512 - correct
+* 579 - 171 Moreland Rd, price listed as 145,000, actual price 1,550,000 https://www.developmentready.com.au/properties/171-moreland-road-coburg-vic-3058
+* 1840 - correct
+* 6458 - 	30 Pyne St, listed as 131000, actual price 1350000
+
+```{r}
+melbourne$Price[579]=1550000
+melbourne$Price[6458]=1350000
+```
+
+### Inspect leverage points
+```{r}
+lev<-lm.influence(model.tran.room)$hat
+plot(lev, main="Leverages", ylim=c(0, 1.5))
+abline(h=2*p/n, col="red")
+```
+### influential obervations
+```{r}
+COOKS <- cooks.distance(model.tran.room)
+COOKS[COOKS>qf(0.5,p,n-p)]
+```
+
