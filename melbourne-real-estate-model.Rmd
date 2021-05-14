@@ -14,6 +14,7 @@ library(tidyverse)
 ```
 
 ### Import Data, create full and intercept only models, perform forward selection
+
 ```{r}
 melbourne <- read.csv("melbourne_cleaned.csv", header=TRUE)
 melbourne = subset(melbourne, select = -c(X) )
@@ -27,6 +28,7 @@ step(regnull, scope=list(lower=regnull, upper=regfull), direction="forward")
 ```
 
 ### Creating the baseline model from the forward selection results
+
 ```{r}
 model <- lm(Price ~ BuildingArea + Suburb + Type + Landsize + 
     CouncilArea + Bathroom + YearBuilt + SellerG + Year + Rooms + 
@@ -36,6 +38,7 @@ summary(model)
 ```
 
 ### Checking regression assumptions
+
 ```{r}
 plot(model$fitted.values,model$residuals, main="Plot of Residuals against Fitted Values")
 abline(h=0,col="red")
@@ -47,7 +50,9 @@ acf(model$residuals, main="ACF of Residuals")
 qqnorm(model$residuals)
 qqline(model$residuals, col="red")
 ```
+
 ### Getting optimal box cox value to transform the response
+
 ```{r}
 bc <- boxcox(model, lambda = seq(-0.3, 0.3, 0.01))
 
@@ -55,7 +60,9 @@ bc <- boxcox(model, lambda = seq(-0.3, 0.3, 0.01))
 bc <- bc$x[which.max(bc$y)]
 bc
 ```
+
 ### Transforming the response with optimal BC
+
 ```{r}
 Price.tran <- log(melbourne$Price)
 model.tran <-lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
@@ -66,6 +73,7 @@ summary(model.tran)
 ```
 
 ### Checking assumptions on transformed model
+
 ```{r}
 plot(model.tran$fitted.values,model.tran$residuals, main="Plot of Residuals against Fitted Values")
 abline(h=0,col="red")
@@ -79,12 +87,14 @@ qqline(model.tran$residuals, col="red")
 ```
 
 ### Check for multicollinearity
+
 ```{r}
 library(faraway)
 vif(model.tran)
 ```
 
 ### Partial Regression Plots
+
 ```{r}
 result.y.rooms <- lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
     CouncilArea + Bathroom + YearBuilt + SellerG + Year + 
@@ -99,7 +109,9 @@ res.rooms <- result.rooms$residuals
 plot(res.rooms, res.y.rooms, main="Partial Regression Plot of Rooms")
 abline(h=0)
 ```
+
 ### Check normality for individual predictors that may need transformation
+
 ```{r}
 par(mfrow=c(1,2))
 qqnorm((melbourne$Rooms),main="Normal Q-Q Plot of Rooms");qqline((melbourne$Rooms))
@@ -107,6 +119,7 @@ qqnorm(log(melbourne$Rooms),main="Normal Q-Q Plot of log Rooms");qqline(log(melb
 ```
 
 ### Fitting model with rooms log transformed
+
 ```{r}
 Price.tran <- log(melbourne$Price)
 model.tran.room <-lm(Price.tran~BuildingArea + Suburb + Type + Landsize + 
@@ -117,6 +130,7 @@ summary(model.tran.room)
 ```
 
 ### Checking assumptions again
+
 ```{r}
 plot(model.tran.room$fitted.values,model.tran.room$residuals, main="Plot of Residuals against Fitted Values")
 abline(h=0,col="red")
@@ -128,7 +142,9 @@ acf(model.tran.room$residuals, main="ACF of Residuals")
 qqnorm(model.tran.room$residuals)
 qqline(model.tran.room$residuals, col="red")
 ```
+
 ### Model Diagnostics
+
 ```{r}
 res <- model.tran.room$residuals
 student.res <- rstandard(model.tran.room)
@@ -139,6 +155,7 @@ plot(model.tran.room$fitted.values, res, main="Residuals")
 plot(model.tran.room$fitted.values, student.res, main="Studentized Residuals")
 plot(model.tran.room$fitted.values, ext.student.res, main="Externally Studentized Residuals")
 ```
+
 ```{r}
 n <- length(melbourne)
 p <- 17
@@ -152,14 +169,15 @@ ext.student.res[abs(ext.student.res)>qt(1-0.05/(2*n), n-p-1)]
 ```
 
 ### Inspect outliers in the response - will need to find them in the raw data that contains the address
+
 ```{r}
 melbourne_raw <- read.csv("melb_data_raw.csv", header=TRUE)
 ```
 
-* 512 - correct
-* 579 - 171 Moreland Rd, price listed as 145,000, actual price 1,550,000 https://www.developmentready.com.au/properties/171-moreland-road-coburg-vic-3058
-* 1840 - correct
-* 6458 - 	30 Pyne St, listed as 131000, actual price 1350000
+-   512 - correct
+-   579 - 171 Moreland Rd, price listed as 145,000, actual price 1,550,000 <https://www.developmentready.com.au/properties/171-moreland-road-coburg-vic-3058>
+-   1840 - correct
+-   6458 - 30 Pyne St, listed as 131000, actual price 1350000
 
 ```{r}
 melbourne$Price[579]=1550000
@@ -167,14 +185,34 @@ melbourne$Price[6458]=1350000
 ```
 
 ### Inspect leverage points
+
 ```{r}
 lev<-lm.influence(model.tran.room)$hat
 plot(lev, main="Leverages", ylim=c(0, 1.5))
 abline(h=2*p/n, col="red")
 ```
+
 ### influential obervations
+
 ```{r}
 COOKS <- cooks.distance(model.tran.room)
 COOKS[COOKS>qf(0.5,p,n-p)]
 ```
 
+## Hypothesis Testing: Adding Bathrooms
+
+H0: Bathroom Coefficient = 11.01228 Ha: Bathroom Coefficient != 11.01228
+
+```{r}
+bathroomCOEF <- 0.06268
+bathroomSE <- 0.003868
+
+mean <- mean(melbourne$Price)
+pctmean <- mean*0.057
+logmeanprice <- log(pctmean)
+t <- (bathroomCOEF-logmeanprice)/bathroomSE
+abs(t)
+
+critical <- qt(0.025, 12895)
+critical
+```
