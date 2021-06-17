@@ -12,7 +12,7 @@ We aimed to identify the aspects of a property that drive up price the most, whe
 
 During our preliminary analysis of the data, we noticed a difference in prices based on who was selling the property, so we also wanted to explore which sellers are more likely to charge more for a home. Prospective homeowners and investors could then go into a price negotiation with a general understanding of the other agent’s price flexibility. To assist our efforts, as well as the prospective investors in Melbourne’s real estate market, we developed a web application for inspecting the available real estate data, understanding the factors that affect price, and predicting the price of a property with user-generated inputs.
 
-Final Report: https://github.com/twt6xy/melbourne-housing/blob/main/Analysis%20of%20Real%20Estate%20Prices%20in%20Melbourne%2C%20Australia.pdf
+Final Report: [Analysis of Real Estate Prices in Melbourne, Australia](https://github.com/twt6xy/melbourne-housing/blob/main/Analysis%20of%20Real%20Estate%20Prices%20in%20Melbourne%2C%20Australia.pdf)
 
 ### Dashboard
 To assist in data analysis and iterative modelling, we created a web application to interact with the dataset. The dashboard is split into three tabs, Exploratory, Simple Linear Regression and Multivariate Linear Regression.
